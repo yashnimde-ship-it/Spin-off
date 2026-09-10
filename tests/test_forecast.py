@@ -12,7 +12,10 @@ from src.config.settings import settings
 
 PROPHET_MODEL = settings.MODELS_DIR / "prophet_baseline_v1.pkl"
 LSTM_MODEL = settings.MODELS_DIR / "lstm_residual_v1.pt"
-SHORTFALL_MODEL = settings.MODELS_DIR / "shortfall_v1.pkl"
+#: The shipped classifier. `shortfall_v1.pkl` was the Phase 3 scaffold's
+#: path and never existed, so this test silently skipped instead of
+#: validating anything.
+SHORTFALL_MODEL = settings.MODELS_DIR / "shortfall_classifier_v1.pkl"
 
 
 def _synthetic_months(n: int = 72) -> pd.DataFrame:
@@ -99,7 +102,10 @@ def test_production_parser_prefers_monthly_over_cumulative() -> None:
 def test_lstm_residual_reduces_error() -> None:
     """The hybrid must be recorded against the Prophet-only baseline."""
     if not LSTM_MODEL.exists():
-        pytest.skip("LSTM residual model not trained")
+        # Phase 3.2e was deliberately deferred: the ship criterion was a
+        # >=1.5pp MAPE improvement over Prophet+regressors, and the model was
+        # never built. This skip marks unbuilt scope, not a failure.
+        pytest.skip("LSTM residual model not built (Phase 3.2e deferred)")
 
     import torch
 
@@ -119,19 +125,27 @@ def test_lstm_forward_pass_shape() -> None:
     assert out.shape == (4,)
 
 
-def test_shortfall_classifier_beats_baseline() -> None:
+def test_shortfall_classifier_bundle_is_well_formed() -> None:
+    """The shipped bundle carries the rules it was trained under.
+
+    The bundle records `shap_importance`, `n_train` and `n_positives` rather
+    than a `metrics` dict; the backtest numbers live in the Phase 3.2d write-up
+    and are asserted in tests/test_shortfall.py.
+    """
     if not SHORTFALL_MODEL.exists():
-        pytest.skip("shortfall model not trained")
+        pytest.skip(f"{SHORTFALL_MODEL.name} not present - run the Phase 3.2d training")
 
     import joblib
 
     bundle = joblib.load(SHORTFALL_MODEL)
-    metrics = bundle["metrics"]
-    assert bundle["features"]
+    assert bundle["features"], "the feature order must be recorded"
+    assert len(bundle["features"]) == 9
     assert 0.0 < bundle["shortfall_threshold"] < 1.0
-    if "auc" in metrics:
-        # Beating 0.5 is the floor; the report carries the honest reading.
-        assert 0.0 <= metrics["auc"] <= 1.0
+    assert bundle["min_train_for_label"] == 60, "label-contamination cut"
+    assert bundle["n_train"] == 60 and bundle["n_positives"] == 13
+    # Rainfall predicting the tail is the substantive Phase 3.2 finding.
+    importance = bundle["shap_importance"].set_index("feature").mean_abs_shap
+    assert importance["rainfall_lag2_mm"] > importance["rainfall_concurrent_mm"]
 
 
 def test_forecast_endpoint_returns_valid_response() -> None:

@@ -1,7 +1,7 @@
 # Phase 4, Bucket 1 — Backend complete
 
 **Contract version:** v1.5 (`docs/phase_4/api_contracts.md`)
-**Test suite:** 193 passed, 2 skipped
+**Test suite:** 194 passed, 1 skipped
 **Date:** 2026-09-10
 
 Every endpoint serves real data from promoted artifacts. No mocked responses,
@@ -134,15 +134,24 @@ prediction.
 
 ## Tests
 
-**193 passed, 2 skipped.**
+**194 passed, 1 skipped.**
 
 - `tests/test_api_phase4.py` — 90 tests covering the ten Phase 4 endpoints:
   contract shape, happy path, 422 validation, 500 with machine-readable error
   codes, idempotency, cache behaviour, and the route registry.
 - Remaining ~103 across Phase 1–3 suites, unchanged.
 
-The **2 skipped** are DB-backed tests requiring `DATABASE_URL` — they skip
-whenever Supabase is unreachable and are unrelated to Phase 4.
+The **1 skip** is `test_lstm_residual_reduces_error`: Phase 3.2e was
+deferred, so `models/lstm_residual_v1.pt` does not exist. It marks unbuilt
+scope, not a failure.
+
+An earlier version of this document said the skips were DB-backed tests
+needing `DATABASE_URL`. That was wrong — those tests run against Supabase
+whenever the variable is set. A second skip,
+`test_shortfall_classifier_beats_baseline`, was pointing at
+`models/shortfall_v1.pkl`, the retired Phase 3 scaffold's path that never
+existed; it now targets the shipped `shortfall_classifier_v1.pkl` and
+asserts against its real contents.
 
 ## Not done, by design
 

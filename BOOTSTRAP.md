@@ -149,12 +149,17 @@ Interactive API docs: `http://127.0.0.1:8000/docs` — 24 operations.
 pytest -q
 ```
 
-Expected: **193 passed, 2 skipped**.
+Expected: **194 passed, 1 skipped**.
 
-The 2 skips are DB-backed tests that need `DATABASE_URL`. They skip whenever
-Supabase is unreachable, which is **expected and fine for the demo** — they
-cover Phase 1 reference tables, not the Phase 4 backend. A run reporting
-"193 passed, 2 skipped" is a healthy run.
+The single skip is `test_lstm_residual_reduces_error`. Phase 3.2e (an LSTM on
+Prophet's residuals) was deliberately deferred — it had to beat
+Prophet+regressors by >= 1.5 pp MAPE to ship, and was never built — so there is
+no `models/lstm_residual_v1.pt` to test. That skip marks unbuilt scope, not a
+failure, and is expected for the demo.
+
+The DB-backed tests do **not** skip when `DATABASE_URL` is set; they run
+against Supabase. If the database is unreachable they will fail rather than
+skip.
 
 ## Known limitations
 
