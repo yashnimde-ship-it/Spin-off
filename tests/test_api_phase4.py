@@ -617,6 +617,7 @@ EXPECTED_ROUTES = {
     ("GET", "/production/history"),
     ("GET", "/prospectivity/heatmap"),
     ("GET", "/recommendations"),
+    ("GET", "/recommendations/scenario/{month}"),
     ("GET", "/shortfall/risk"),
     ("POST", "/train"),
     ("GET", "/train/{task_id}"),
@@ -739,10 +740,11 @@ def test_retrain_cannot_overwrite_the_shipped_model(client: TestClient) -> None:
     assert SHIPPED_FORECAST_MODEL.stat().st_mtime == before
 
 
-def test_recommendations_is_stubbed_501(client: TestClient) -> None:
+def test_recommendations_is_wired(client: TestClient) -> None:
+    """Bucket 2 replaced the 501 stub with the rules engine."""
     response = client.get("/recommendations")
-    assert response.status_code == 501
-    assert response.json()["error_code"] == "not_implemented"
+    assert response.status_code == 200
+    assert "recommendations" in response.json()
 
 
 @pytest.mark.parametrize("query", ["?mine_name=Foo", "?limit=0", "?limit=50"])
@@ -752,8 +754,7 @@ def test_recommendations_validates_before_stubbing(client: TestClient, query: st
 
 
 def test_recommendations_accepts_a_known_mine(client: TestClient) -> None:
-    """A valid request still 501s - it does not 422."""
-    assert client.get("/recommendations?mine_name=Balaghat&limit=3").status_code == 501
+    assert client.get("/recommendations?mine_name=Balaghat&limit=3").status_code == 200
 
 
 # --- shortfall disk cache ----------------------------------------------

@@ -9,13 +9,25 @@ from typing import Any
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from src.api.errors import NotImplementedInDemo
 from src.api.state import FORECAST_MODEL_VERSION, SHORTFALL_MODEL_VERSION
+from src.config.settings import settings
 from src.reference.moil_mines import MOIL_MINES
 
 logger = logging.getLogger("api.dashboard")
 
 router = APIRouter(tags=["dashboard"])
+
+
+def _validate_recommendation_params(mine_name: str | None, limit: int) -> str | None:
+    """Shared validation. Returns the resolved mine_type, or None to default."""
+    if mine_name is not None and mine_name not in MOIL_MINES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"unknown mine {mine_name!r}; expected one of {', '.join(sorted(MOIL_MINES))}",
+        )
+    if not 1 <= limit <= 20:
+        raise HTTPException(status_code=422, detail=f"limit must be 1-20, got {limit}")
+    return MOIL_MINES[mine_name]["mine_type"] if mine_name else None
 
 
 @router.get("/dashboard/summary", summary="Aggregated landing-view data")
@@ -119,25 +131,111 @@ def get_dashboard_summary(request: Request) -> dict[str, Any]:
     }
 
 
-@router.get("/recommendations", summary="Rules-engine recommendations (Bucket 2)")
+@router.get("/recommendations", summary="Corrective actions for the current month")
 def get_recommendations(
+    request: Request,
     mine_name: str | None = Query(None),
     limit: int = Query(5, description="1-20"),
 ) -> dict[str, Any]:
-    """Not built yet - returns 501 rather than a plausible-looking fake.
+    """Rules-engine cards derived from the live shortfall explanation.
 
-    Params are still validated so the frontend can exercise its error handling
-    against the real contract before the engine exists.
+    Reuses the cached `/shortfall/risk` payload rather than recomputing SHAP.
+    There are no per-mine forecasts, so a named mine gets the same aggregate
+    risk score with its own fleet vocabulary applied.
     """
-    if mine_name is not None and mine_name not in MOIL_MINES:
-        raise HTTPException(
-            status_code=422,
-            detail=f"unknown mine {mine_name!r}; expected one of {', '.join(sorted(MOIL_MINES))}",
-        )
-    if not 1 <= limit <= 20:
-        raise HTTPException(status_code=422, detail=f"limit must be 1-20, got {limit}")
+    from src.api.routers.shortfall import get_shortfall_risk
+    from src.models.recommendations.engine import generate_recommendations
 
-    raise NotImplementedInDemo(
-        detail="the recommendations rules engine is not implemented yet (Bucket 2)",
-        remedy="mock against the documented shape in docs/phase_4/api_contracts.md section 8",
+    mine_type = _validate_recommendation_params(mine_name, limit)
+    shortfall = get_shortfall_risk(request)
+    return generate_recommendations(
+        shortfall, mine_name=mine_name, mine_type=mine_type, limit=limit
     )
+
+
+@router.get(
+    "/recommendations/scenario/{month}",
+    summary="Corrective actions for a historical shortfall month",
+)
+def get_scenario_recommendations(
+    request: Request,
+    month: str,
+    mine_name: str | None = Query(None),
+    limit: int = Query(5, description="1-20"),
+) -> dict[str, Any]:
+    """Replay the classifier over a real past month.
+
+    The current month usually scores low risk - correctly - so the live
+    endpoint returns an empty card set. This replays a real historical
+    shortfall through the same model and the same rules, so what a reviewer
+    sees is genuine output rather than a fabricated scenario. Allowed months
+    live in `settings.SCENARIO_MONTHS`.
+    """
+    import shap
+
+    from src.models.recommendations.engine import generate_recommendations
+    from src.models.shortfall_classifier import SHORTFALL_THRESHOLD
+    from src.api.routers.shortfall import FEATURE_LABELS, _display_value
+
+    mine_type = _validate_recommendation_params(mine_name, limit)
+    if month not in settings.SCENARIO_MONTHS:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"scenario month {month!r} not available; "
+                f"choose one of {', '.join(settings.SCENARIO_MONTHS)}"
+            ),
+        )
+
+    artifacts = request.app.state.artifacts
+    bundle = artifacts.require("shortfall_model")
+    features = artifacts.require("shortfall_features")
+
+    row = features[features.ds == pd.Period(month, freq="M").to_timestamp()]
+    if row.empty:
+        raise HTTPException(
+            status_code=404, detail=f"no feature row for {month}"
+        )
+
+    order = list(bundle["features"])
+    design = row[order]
+    probability = float(bundle["model"].predict_proba(design)[:, 1][0])
+    explainer = shap.TreeExplainer(bundle["model"])
+    contributions = explainer.shap_values(design)[0]
+
+    ranked = sorted(
+        (
+            {
+                "feature_name": name,
+                "human_label": FEATURE_LABELS.get(name, name),
+                "value": float(row.iloc[0][name]),
+                "display_value": _display_value(name, float(row.iloc[0][name])),
+                "shap_contribution": float(value),
+                "direction": "increases_risk" if value > 0 else "decreases_risk",
+            }
+            for name, value in zip(order, contributions)
+        ),
+        key=lambda item: abs(item["shap_contribution"]),
+        reverse=True,
+    )
+
+    level = float(row.iloc[0]["prophet_forecast_level"])
+    shortfall = {
+        "as_of": month,
+        "forecast_month": month,
+        "shortfall_probability": probability,
+        "risk_level": (
+            "high" if probability >= 0.50 else "medium" if probability >= 0.25 else "low"
+        ),
+        "prophet_forecast_tonnes": level,
+        "shortfall_threshold_tonnes": level * SHORTFALL_THRESHOLD,
+        "feature_contributions": ranked,
+    }
+
+    payload = generate_recommendations(
+        shortfall, mine_name=mine_name, mine_type=mine_type, limit=limit
+    )
+    payload["context"]["scenario_month"] = month
+    payload["context"]["is_historical_replay"] = True
+    payload["context"]["actual_shortfall"] = bool(row.iloc[0].get("shortfall", 0))
+    return payload

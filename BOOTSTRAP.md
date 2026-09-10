@@ -141,7 +141,17 @@ shortfall SHAP explanation (~3 s), and three heatmap viewports (~20–24 s
 each). The API answers requests immediately; the first `/prospectivity/heatmap`
 call before warming finishes will take ~38 s rather than ~10 ms.
 
-Interactive API docs: `http://127.0.0.1:8000/docs` — 24 operations.
+Endpoints that work immediately post-clone (no database needed):
+`/production/history`, `/mines`, `/mines/{name}`, `/forecast`,
+`/forecast/history`, `/prospectivity/heatmap`, and — once `/shortfall/risk`
+has been answered — `/recommendations` and
+`/recommendations/scenario/{month}`.
+
+The recommendations endpoints depend on the shortfall explanation, so they
+need `DATABASE_URL` for the same reason `/shortfall/risk` does: three of the
+classifier's nine features are rainfall terms.
+
+Interactive API docs: `http://127.0.0.1:8000/docs` — 25 operations.
 
 ## 5. Run the tests
 
@@ -149,7 +159,7 @@ Interactive API docs: `http://127.0.0.1:8000/docs` — 24 operations.
 pytest -q
 ```
 
-Expected: **194 passed, 1 skipped**.
+Expected: **238 passed, 1 skipped**.
 
 The single skip is `test_lstm_residual_reduces_error`. Phase 3.2e (an LSTM on
 Prophet's residuals) was deliberately deferred — it had to beat
@@ -174,7 +184,9 @@ See `docs/known_issues.md` for the full list with evidence. The short version:
 
 ## Where to start reading
 
-- `docs/phase_4/api_contracts.md` — the API contract (v1.5), source of truth
+- `docs/phase_4/api_contracts.md` — the API contract (v1.6), source of truth
   for the frontend
-- `docs/phase_4/bucket_1_summary.md` — what is built and what it serves
+- `docs/phase_4/bucket_1_summary.md` — the 24 Bucket 1 endpoints
+- `docs/phase_4/bucket_2_summary.md` — the recommendations rules engine
+- `docs/phase_4/recommendations_design.md` — driver taxonomy and rule catalog
 - `docs/known_issues.md` — every known defect with the evidence that found it

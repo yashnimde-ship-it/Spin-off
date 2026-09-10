@@ -1,6 +1,6 @@
 # Phase 4, Bucket 1 — Backend complete
 
-**Contract version:** v1.5 (`docs/phase_4/api_contracts.md`)
+**Contract version:** v1.5 (superseded by v1.6 — see `bucket_2_summary.md`) (`docs/phase_4/api_contracts.md`)
 **Test suite:** 194 passed, 1 skipped
 **Date:** 2026-09-10
 
@@ -25,7 +25,7 @@ exact set and fails if one disappears *or* an undocumented one appears.
 | GET | `/dashboard/summary` | ready | landing aggregate, degrades per component |
 | GET | `/prospectivity/heatmap` | ready | 32×32 score lattice for the map |
 | POST | `/forecast/retrain` | **501 stub** | disabled in demo mode |
-| GET | `/recommendations` | **501 stub** | Bucket 2; params validate, body 501s |
+| GET | `/recommendations` | **implemented in Bucket 2** | see `bucket_2_summary.md` |
 
 ### Phase 1/2 — unchanged, still passing
 

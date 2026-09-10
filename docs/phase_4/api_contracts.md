@@ -1,7 +1,12 @@
-# Phase 4 API Contracts — v1.5
+# Phase 4 API Contracts — v1.6
 
 Source of truth for the frontend. Schemas here are fixed; if implementation
 forces a change, the change is raised before it is made, not after.
+
+**v1.6 changes from v1.5:** `/recommendations` is implemented — the `501`
+stub is gone. Adds `context.footnotes`, `coverage_complete`,
+`action_types_included` / `action_types_omitted`, and a new
+`GET /recommendations/scenario/{month}`.
 
 **v1.5 changes from v1.4:** clarified that `/dashboard/summary`'s `degraded`
 field is always present. Documentation only - no behaviour change.
@@ -492,54 +497,168 @@ curl "http://127.0.0.1:8000/dashboard/summary"
 
 ## 8. `GET /recommendations`
 
-**Contract only — the rules engine is Bucket 2.** Until then the endpoint
-returns `501` with `{"error_code": "not_implemented", "detail": "..."}`, so
-the frontend can mock against the shape without a fake success.
+Corrective actions derived from the live shortfall SHAP explanation. Closes
+three problem-statement bullets: adjusting mine schedules, optimising blasting,
+and re-deploying equipment.
+
+The endpoint reuses the cached `/shortfall/risk` payload rather than
+recomputing SHAP. There are no per-mine forecasts, so a named mine gets the
+**same aggregate risk score** with its own fleet vocabulary applied; the
+`mine_type` decides whether underground or opencast rules fire.
 
 **Query params**
 
 | name | type | default | rules |
 |---|---|---|---|
 | `mine_name` | string | `null` | must match a known mine; else `422` |
-| `limit` | int | `5` | 1–20; else `422` |
+| `limit` | int | `5` | 1-20; else `422` |
 
-**Response `200` (once implemented)**
+### Behaviour by risk level
+
+| `shortfall_probability` | behaviour |
+|---|---|
+| `< 0.25` (low) | empty `recommendations`, `context.message` explains why, `footnotes` empty |
+| `0.25 - 0.60` (medium) | 1-2 cards from the **primary driver only**; no action-type guarantee |
+| `>= 0.60` (high) | all three action types guaranteed, subject to `limit` |
+
+Only features with **positive** SHAP - those arguing *for* a shortfall -
+generate actions. Features with negative SHAP explain why the forecast is
+currently healthy and warrant no intervention. Ranking by absolute SHAP would,
+on the current live prediction, fire actions against recent production
+performance, whose contributions are all negative because last month beat
+forecast by 7.4%.
+
+**Response `200`**
 
 ```json
 {
-  "generated_at": "2026-09-09T14:20:00Z",
+  "generated_at": "2026-09-11T09:20:00Z",
   "context": {
     "mine_name": "Balaghat",
     "mine_type": "underground",
-    "shortfall_probability": 0.1073,
-    "forecast_month": "2026-06"
+    "shortfall_probability": 0.9103,
+    "forecast_month": "2021-04",
+    "risk_level": "high",
+    "drivers_ranked": [
+      {"driver": "rainfall_signal", "label": "Rainfall and monsoon impact", "positive_shap": 1.5669},
+      {"driver": "production_history_signal", "label": "Recent production performance", "positive_shap": 1.4412}
+    ],
+    "footnotes": []
   },
   "recommendations": [
     {
-      "id": "ug_stowing_capacity",
-      "title": "Review hydraulic sand stowing capacity ahead of monsoon",
-      "rationale": "Rainfall two months prior is the strongest rainfall signal in the shortfall model; stowing throughput constrains face availability after wet periods.",
-      "equipment_referenced": ["hydraulic_sand_stowing"],
+      "id": "ug_rain_shift_sequence",
+      "action_type": "schedule_adjustment",
+      "title": "Re-sequence development shifts away from wet-season faces",
+      "rationale": "rainfall 2 months ago (7.1 mm) is the leading risk driver. Move development effort to levels least exposed to inflow before the next cycle is planned.",
+      "equipment_referenced": ["rock_mechanics_monitoring"],
+      "priority": "high",
+      "driver": "rainfall_signal",
+      "driver_label": "Rainfall and monsoon impact",
       "triggered_by": [
-        {"signal": "rainfall_lag2_mm", "value": 1.5, "shap_contribution": 1.0273}
+        {"signal": "rainfall_lag2_mm", "value": 7.1, "display_value": "7.1 mm", "shap_contribution": 1.0273}
       ],
-      "priority": "medium",
       "confidence": "rule_based"
     }
-  ]
+  ],
+  "coverage_complete": true,
+  "action_types_included": ["blasting_optimization", "equipment_redeployment", "schedule_adjustment"],
+  "action_types_omitted": []
 }
 ```
 
-`equipment_referenced` items must come from `UNDERGROUND_FLEET_VOCAB` or
+`action_type` is one of `schedule_adjustment`, `blasting_optimization`,
+`equipment_redeployment`.
+
+`equipment_referenced` items come only from `UNDERGROUND_FLEET_VOCAB` or
 `OPENCAST_FLEET_VOCAB`. Public sources record no LHD, jumbo drill or
 100-tonne dumper at any MOIL mine, so generic mining terminology would name
-equipment MOIL does not operate.
+equipment MOIL does not operate. A test iterates every rule template to
+enforce this.
 
-`confidence` is `rule_based` — these are deterministic rules, not model output,
-and the UI should not imply a learned confidence score.
+`confidence` is always `rule_based` - these are deterministic rules over model
+output, not a learned score, and the UI should not imply otherwise.
+
+### `coverage_complete` and `limit`
+
+At `p >= 0.60` the response is guaranteed to carry one card of each action
+type. `limit` **wins** over that guarantee: an explicit caller request is not
+overridden. When `limit < 3` truncates the set, action-type *diversity* is
+preserved rather than taking top-N by priority, so `limit=2` returns two
+different action types:
+
+```json
+{"coverage_complete": false,
+ "action_types_included": ["schedule_adjustment", "equipment_redeployment"],
+ "action_types_omitted": ["blasting_optimization"]}
+```
+
+### `context.footnotes`
+
+Always present, an array, usually empty. It carries an explanation only when a
+contribution is **counterintuitive** - a feature whose raw value reads as good
+news while its SHAP pushes risk up. Three features can do this:
+`production_trend_3mo` above 1.0, and `deviation_lag1` / `deviation_lag2` above
+zero. A rising trend raising shortfall risk is genuine model behaviour (mean
+reversion: the forecast rises with recent output, so the next month must
+sustain a higher level), but a card quoting it without explanation reads as a
+non-sequitur.
+
+Rainfall, forecast level and the seasonal terms raising risk are intuitive and
+never produce a footnote. Footnotes are suppressed entirely when no cards
+render, since there would be nothing for them to explain.
 
 ```bash
 curl "http://127.0.0.1:8000/recommendations?mine_name=Balaghat&limit=3"
+```
+
+---
+
+## 8b. `GET /recommendations/scenario/{month}`
+
+Replays the classifier over a real historical month and returns the
+recommendations that month's actual SHAP output produces.
+
+The current month usually scores low risk - correctly - so `/recommendations`
+returns an empty card set. This endpoint exists so a reviewer can see the
+engine working on **real data and real model output**, rather than a
+fabricated scenario or a `simulate_probability` parameter that would leave
+demo-only code in the production surface.
+
+**Path param:** `month`, `YYYY-MM`. Must appear in `settings.SCENARIO_MONTHS`;
+otherwise `404` naming the available months.
+
+**Query params:** `mine_name` and `limit`, exactly as section 8.
+
+Configured months, both real shortfalls the model flags at `p >= 0.60`,
+picked for different driver profiles so the taxonomy visibly switches:
+
+| month | p | leading driver | actual shortfall |
+|---|---|---|---|
+| `2021-04` | 0.910 | `rainfall_signal` (1.567) | yes |
+| `2024-02` | 0.991 | `forecast_level_signal` (2.247) | yes |
+
+Months before 2021-04 are unavailable: the classifier's feature table begins
+there, because the `min_train_for_label = 60` cut excluded early origins where
+a young Prophet manufactured artefactual shortfalls.
+
+**Response `200`** — identical to section 8, plus three context fields:
+
+```json
+{
+  "context": {
+    "scenario_month": "2021-04",
+    "is_historical_replay": true,
+    "actual_shortfall": true
+  }
+}
+```
+
+`actual_shortfall` is the recorded label for that month, so the UI can state
+that the month genuinely undershot rather than implying a hypothetical.
+
+```bash
+curl "http://127.0.0.1:8000/recommendations/scenario/2021-04"
 ```
 
 ---

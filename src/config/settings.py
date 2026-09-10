@@ -29,6 +29,15 @@ HEATMAP_WARM_VIEWPORTS: list[dict[str, object]] = [
     {"name": "balaghat_ukwa", "bbox": [80.05, 21.70, 80.60, 22.05], "grid_size": 32},
 ]
 
+#: Historical months the recommendations demo can replay. Each is a real
+#: shortfall the shipped classifier flags at p >= 0.60, chosen for a rich
+#: spread of positive SHAP across drivers so the cards differ:
+#:   2021-04  rainfall-led   (rain 1.567 > history 1.441)
+#:   2024-02  forecast-led   (level 2.247 > history 1.601 > rain 0.740)
+#: Swap these freely - nothing else depends on the values. Months before
+#: 2021-04 are unavailable: the label-contamination cut starts there.
+SCENARIO_MONTHS: list[str] = ["2021-04", "2024-02"]
+
 # Sausar belt area of interest: [min_lon, min_lat, max_lon, max_lat] in EPSG:4326.
 BBOX: list[float] = [79.0, 21.3, 80.6, 22.1]
 
@@ -79,6 +88,7 @@ class Settings(BaseSettings):
     S2_BANDS: list[str] = S2_BANDS
     MOIL_MINES: dict[str, tuple[float, float, str]] = MOIL_MINES
     HEATMAP_WARM_VIEWPORTS: list[dict[str, object]] = HEATMAP_WARM_VIEWPORTS
+    SCENARIO_MONTHS: list[str] = SCENARIO_MONTHS
 
     @property
     def s2_smoke_test(self) -> Path:
