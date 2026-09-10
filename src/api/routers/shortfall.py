@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Request
 
-from src.api.errors import PredictionFailed
+from src.api.errors import DataNotLoaded, PredictionFailed
 from src.api.state import SHORTFALL_MODEL_VERSION
 from src.config.settings import settings
 
@@ -146,7 +146,19 @@ def get_shortfall_risk(request: Request) -> dict[str, Any]:
             _RISK_CACHE["payload"] = persisted
             return persisted
 
-        rainfall = load_monthly_rainfall().set_index("ds").rainfall_mm
+        rainfall_frame = load_monthly_rainfall()
+        if rainfall_frame.empty:
+            # load_monthly_rainfall() swallows a DB failure and returns an
+            # empty frame, so the first lag lookup below would raise a bare
+            # KeyError naming a Timestamp - which tells nobody what is wrong.
+            raise DataNotLoaded(
+                detail="rainfall data unavailable - check DATABASE_URL in .env",
+                remedy=(
+                    "three of the classifier's nine features are rainfall terms, "
+                    "read from imd_rainfall_daily; see .env.example"
+                ),
+            )
+        rainfall = rainfall_frame.set_index("ds").rainfall_mm
         # Provenance is recorded because a silent climatology fallback produced
         # a false null in Phase 3.2c; if this ever reads imputed, the
         # explanation is weaker and the UI should say so.
@@ -167,6 +179,8 @@ def get_shortfall_risk(request: Request) -> dict[str, Any]:
         explainer = shap.TreeExplainer(bundle["model"])
         contributions = explainer.shap_values(design)[0]
         base_value = float(np.ravel(explainer.expected_value)[0])
+    except DataNotLoaded:
+        raise  # already carries a specific, actionable message
     except Exception as exc:  # noqa: BLE001 - surfaced with a machine code
         raise PredictionFailed(f"shortfall scoring failed: {exc}") from exc
 
