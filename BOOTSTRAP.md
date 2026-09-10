@@ -46,7 +46,8 @@ root. This will populate `models/` and `data/processed/`.
 tar -xzf moil_artifacts_bundle.tar.gz
 ```
 
-It is ~2.5 MB and contains:
+It is ~2.5 MB. **Every file below is required** — the API needs all of them
+to serve a fully working set of endpoints. Do not trim the bundle.
 
 | path | what it is |
 |---|---|
@@ -62,7 +63,30 @@ It is ~2.5 MB and contains:
 | `data/processed/shortfall_labels.parquet` | rolling-origin shortfall labels |
 | `data/processed/moil_monthly_series.parquet` | 20 MOIL months, proxy validation only |
 | `data/raw/moil/msmp_archive_full.csv` | source-of-truth list of 134 IBM bulletins |
-| `data/raw/india/geology/*.geojson` | geological and occurrence-buffer masks |
+| `data/raw/india/geology/sausar_precambrian_formations_macrostrat_proxy.geojson` | geological mask |
+| `data/raw/india/geology/occurrence_buffer_5km.geojson` | occurrence-buffer mask |
+
+Grouped by what breaks without them:
+
+**Model pickles and weights (`models/`)** — 4 files:
+`prophet_baseline_v1_0_shipped.pkl`, `shortfall_classifier_v1.pkl`,
+`prospectivity_v6.pkl`, `autoencoder_v1.pt`.
+The autoencoder is easy to overlook because it is `.pt` rather than `.pkl`,
+but `predict.py` needs it for the 64 AE feature columns — without it every
+`/predict/*` and `/prospectivity/heatmap` call fails.
+
+**Processed data (`data/processed/`)** — 6 files:
+`prophet_metrics_baseline_v1_0.json`, `prophet_backtest_rows_baseline_v1_0.parquet`,
+`msmp_mn_monthly_wide.parquet`, `msmp_mn_monthly_long.parquet`,
+`shortfall_features.parquet`, `shortfall_labels.parquet`,
+plus `moil_monthly_series.parquet` for proxy validation.
+
+**Mask GeoJSONs (`data/raw/india/geology/`)** — 2 files. Without them any
+call passing `?mask=geological`, `?mask=occurrence_buffer` or `?mask=both`
+fails, though `?mask=none` still works.
+
+**Source CSV (`data/raw/moil/`)** — `msmp_archive_full.csv`, the list of 134
+IBM bulletins the whole production series derives from.
 
 **Not** in the bundle, because they are large and regenerable:
 
@@ -73,15 +97,32 @@ It is ~2.5 MB and contains:
 
 ## 3. Configure the environment
 
-Create `.env` at the repo root:
-
-```
-DATABASE_URL=postgresql+psycopg://postgres:PASSWORD@HOST:5432/postgres
+```bash
+cp .env.example .env
 ```
 
-Only the DB-backed endpoints (`/boreholes`, `/priors`, `/foreign`) and the
-rainfall regressor need this. Without it the API still starts, and two tests
-skip rather than fail.
+Then fill in the real values.
+
+**The API does not need `DATABASE_URL` to start.** Verified: with it unset,
+all six startup artifacts load, startup completes cleanly, and
+`/production/history`, `/mines`, `/forecast`, `/forecast/history` and
+`/prospectivity/heatmap` all return `200`.
+
+It *is* needed for:
+
+| endpoint | without `DATABASE_URL` |
+|---|---|
+| `/priors`, `/boreholes`, `/foreign` | `500` — they read Postgres directly |
+| `/shortfall/risk` | `500` — it reads IMD rainfall for its features |
+| `/dashboard/summary` | still `200`, but `{"shortfall": null, "degraded": ["shortfall"]}` |
+| everything else | unaffected |
+
+The shortfall dependency is indirect and easy to miss: the classifier's
+features include three rainfall terms, and `load_monthly_rainfall()` queries
+`imd_rainfall_daily`. Note that once `/shortfall/risk` has been answered
+successfully, the result is cached to `data/cache/` for 24 hours and will keep
+serving from there even if the database later becomes unreachable — so a
+working demo does not prove the connection is configured.
 
 ## 4. Verify the setup
 
@@ -110,8 +151,10 @@ pytest -q
 
 Expected: **193 passed, 2 skipped**.
 
-The 2 skips are DB-backed tests that need `DATABASE_URL`; they skip whenever
-Supabase is unreachable and are unrelated to the Phase 4 backend.
+The 2 skips are DB-backed tests that need `DATABASE_URL`. They skip whenever
+Supabase is unreachable, which is **expected and fine for the demo** — they
+cover Phase 1 reference tables, not the Phase 4 backend. A run reporting
+"193 passed, 2 skipped" is a healthy run.
 
 ## Known limitations
 
