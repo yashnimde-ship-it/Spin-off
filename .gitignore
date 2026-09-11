@@ -27,7 +27,7 @@ build/
 
 # ML artefacts
 mlruns/
-models/
+/models/
 *.pt
 *.pth
 *.pkl
