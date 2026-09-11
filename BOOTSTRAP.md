@@ -39,15 +39,19 @@ Prophet compiles a Stan model on first import, so the initial install is slow.
 
 ## 2. Get the artifact bundle
 
-Download `moil_artifacts_bundle.tar.gz` from [SHARE_LINK] and extract at repo
-root. This will populate `models/` and `data/processed/`.
+Download the bundle and extract it at the repo root. This populates
+`models/`, `data/processed/` and the parts of `data/raw/` the API reads.
 
 ```bash
+curl -L -o moil_artifacts_bundle.tar.gz \
+  https://github.com/yashnimde-ship-it/Spin-off/releases/download/v0.2-artifacts/moil_artifacts_bundle.tar.gz
 tar -xzf moil_artifacts_bundle.tar.gz
 ```
 
-It is ~2.5 MB. **Every file below is required** — the API needs all of them
-to serve a fully working set of endpoints. Do not trim the bundle.
+It is **~311 MB** and holds **16 files**. Most of that is the two rasters;
+everything else together is under 3 MB. **Every file is required** — the API
+needs all of them to serve a fully working set of endpoints. Do not trim the
+bundle.
 
 | path | what it is |
 |---|---|
@@ -65,6 +69,8 @@ to serve a fully working set of endpoints. Do not trim the bundle.
 | `data/raw/moil/msmp_archive_full.csv` | source-of-truth list of 134 IBM bulletins |
 | `data/raw/india/geology/sausar_precambrian_formations_macrostrat_proxy.geojson` | geological mask |
 | `data/raw/india/geology/occurrence_buffer_5km.geojson` | occurrence-buffer mask |
+| `data/raw/satellite/s2_nagpur_smoke_test.tif` | Sentinel-2 mosaic (258 MB) |
+| `data/raw/dem/dem_nagpur_smoke_test.tif` | DEM tile (51 MB) |
 
 Grouped by what breaks without them:
 
@@ -88,12 +94,26 @@ fails, though `?mask=none` still works.
 **Source CSV (`data/raw/moil/`)** — `msmp_archive_full.csv`, the list of 134
 IBM bulletins the whole production series derives from.
 
+**Rasters (`data/raw/satellite/`, `data/raw/dem/`)** — 2 files, and the bulk
+of the bundle's size. Feature extraction needs both: the Sentinel-2 mosaic
+supplies the spectral bands and the DEM supplies terrain. Without them every
+`/predict/point`, `/predict/bbox` and `/prospectivity/heatmap` call fails, so
+the map view has nothing to render. They are included precisely because the
+map is expected to work from a fresh clone.
+
 **Not** in the bundle, because they are large and regenerable:
 
 - the 125 MSMP PDFs (~547 MB) — `python -m src.data.ingest.download_msmp_archive`
   re-downloads them from the URLs in `msmp_archive_full.csv`
-- Sentinel-2 rasters and DEM tiles — fetched by the Phase 1/2 ingest scripts
 - `data/cache/` — API response caches, regenerated on demand
+- the unlabelled national tiles under `data/raw/satellite/unlabelled/` — only
+  needed to score points outside the Sausar mosaic
+
+The Sentinel-2 mosaic and DEM tile **are** in the bundle. They were previously
+excluded as "regenerable", but re-fetching them needs the Phase 1/2 ingest
+scripts and external credentials, and without them the prospectivity map
+cannot render at all — which is the main thing a fresh clone is expected to
+demonstrate.
 
 ## 3. Configure the environment
 
