@@ -7,12 +7,13 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from geoalchemy2.shape import from_shape
 from shapely.geometry import box
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db
+from src.api.errors import NoImageryAtLocation
 from src.api.schemas import (
     MaskInfoOut,
     PredictBboxIn,
@@ -35,6 +36,13 @@ _CELL_HALF_DEG = 0.00027
 #: In-process registry of background training tasks. Deliberately not Celery -
 #: Phase 2 keeps the dependency surface small.
 _TRAIN_TASKS: dict[str, dict[str, Any]] = {}
+
+#: `/predict/bbox` read like a gridded raster, but it returns a score-sorted
+#: list of candidate points that do not lie on a lattice (docs/known_issues.md
+#: #1). It was renamed to say what it returns; the old path keeps working and
+#: flags itself so existing callers can migrate.
+DEPRECATED_HEADER = "X-Deprecated"
+DEPRECATED_BBOX_VALUE = "use-predict-points-in-bbox"
 
 
 def _model_unavailable(exc: FileNotFoundError) -> HTTPException:
@@ -72,13 +80,9 @@ def predict_point_endpoint(
         raise _model_unavailable(exc) from exc
 
     if result is None:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                f"({body.lat}, {body.lon}) falls outside the available imagery "
-                "footprint, so no features could be extracted."
-            ),
-        )
+        # None means no real pixels: outside every raster, or a composite gap
+        # whose zeros would otherwise have been scored as reflectance.
+        raise NoImageryAtLocation(body.lat, body.lon)
 
     # Mask sits between the Elkan-Noto adjustment and the cap, so a surviving
     # score is capped exactly as an unmasked one would be.
@@ -117,14 +121,7 @@ def predict_point_endpoint(
     )
 
 
-@router.post("/predict/bbox", response_model=PredictBboxOut, summary="Score a grid over a bbox")
-def predict_bbox_endpoint(
-    body: PredictBboxIn,
-    mask: str = Query(
-        "none",
-        description=f"Geological post-filter to apply. One of {', '.join(VALID_MASKS)}.",
-    ),
-) -> PredictBboxOut:
+def _score_points_in_bbox(body: PredictBboxIn, mask: str) -> PredictBboxOut:
     from src.models.prospectivity.predict import SCORE_CAP, predict_bbox
 
     if mask not in VALID_MASKS:
@@ -157,6 +154,40 @@ def predict_bbox_endpoint(
     result["mask_applied"] = mask
 
     return PredictBboxOut(**result)
+
+
+@router.post(
+    "/predict/points_in_bbox",
+    response_model=PredictBboxOut,
+    summary="Rank candidate points inside a bbox (a list, not a grid)",
+)
+def predict_points_in_bbox_endpoint(
+    body: PredictBboxIn,
+    mask: str = Query(
+        "none",
+        description=f"Geological post-filter to apply. One of {', '.join(VALID_MASKS)}.",
+    ),
+) -> PredictBboxOut:
+    """Score-sorted candidate points. For a map overlay use /prospectivity/heatmap."""
+    return _score_points_in_bbox(body, mask)
+
+
+@router.post(
+    "/predict/bbox",
+    response_model=PredictBboxOut,
+    deprecated=True,
+    summary="Deprecated: use /predict/points_in_bbox",
+)
+def predict_bbox_endpoint(
+    body: PredictBboxIn,
+    response: Response,
+    mask: str = Query(
+        "none",
+        description=f"Geological post-filter to apply. One of {', '.join(VALID_MASKS)}.",
+    ),
+) -> PredictBboxOut:
+    response.headers[DEPRECATED_HEADER] = DEPRECATED_BBOX_VALUE
+    return _score_points_in_bbox(body, mask)
 
 
 @router.get("/masks", response_model=list[MaskInfoOut], summary="List available prediction masks")

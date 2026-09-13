@@ -152,13 +152,57 @@ def test_predict_point_rejects_invalid_coordinates(api_client) -> None:
     assert response.status_code == 422
 
 
-def test_predict_bbox_rejects_inverted_box(api_client) -> None:
-    """min must be strictly less than max on both axes."""
+@pytest.mark.parametrize("path", ["/predict/points_in_bbox", "/predict/bbox"])
+def test_predict_bbox_rejects_inverted_box(api_client, path: str) -> None:
+    """min must be strictly less than max on both axes, on either path."""
     response = api_client.post(
-        "/predict/bbox",
+        path,
         json={"min_lon": 80.5, "min_lat": 21.9, "max_lon": 80.1, "max_lat": 21.5},
     )
     assert response.status_code == 422
+
+
+_BBOX_PAYLOAD = {
+    "predictions": [{"lon": 80.2, "lat": 21.8, "score": 0.9, "type": "unknown"}],
+    "count": 1,
+    "bbox": [80.1, 21.7, 80.3, 21.9],
+    "grid_resolution_m": 5000.0,
+    "cells_outside_raster": 0,
+    "model_version": "prospectivity_v6",
+}
+
+
+def test_points_in_bbox_and_deprecated_alias_return_the_same_body(
+    api_client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The rename changes the path only; the old one still answers, flagged."""
+    import copy
+
+    import src.models.prospectivity.predict as predict_module
+
+    monkeypatch.setattr(
+        predict_module, "predict_bbox", lambda *a, **kw: copy.deepcopy(_BBOX_PAYLOAD)
+    )
+    request = {
+        "min_lon": 80.1, "min_lat": 21.7, "max_lon": 80.3, "max_lat": 21.9,
+        "grid_resolution_m": 5000,
+    }
+
+    new = api_client.post("/predict/points_in_bbox", json=request)
+    old = api_client.post("/predict/bbox", json=request)
+
+    assert new.status_code == old.status_code == 200
+    assert new.json() == old.json()
+    assert "X-Deprecated" not in new.headers
+    assert old.headers["X-Deprecated"] == "use-predict-points-in-bbox"
+
+
+def test_deprecated_bbox_path_is_marked_in_openapi() -> None:
+    from src.api.main import app
+
+    spec = app.openapi()["paths"]
+    assert spec["/predict/bbox"]["post"].get("deprecated") is True
+    assert not spec["/predict/points_in_bbox"]["post"].get("deprecated", False)
 
 
 def test_grid_points_respects_cap() -> None:
@@ -202,15 +246,12 @@ def test_v6_promotion_ordering() -> None:
         assert result is not None, f"{name} unexpectedly outside the footprint"
         assert result["prospectivity_score"] > 0.5, f"{name} scored {result['prospectivity_score']}"
 
-    # Points whose features are entirely null must not score high.
+    # Points with no imagery must not be scored at all. This half used to
+    # assert a low score here, which pinned v6 scoring an autoencoder
+    # embedding of a blank tile patch (0.0009) as if it were a measurement.
     for lat, lon, name in ((21.2667, 79.0, "Kandri"), (21.2833, 79.05, "Beldongri")):
         result = predict_point(lat, lon, model_path=Path(SHIPPED_MODEL_PATH), explain=False)
-        assert result is not None
-        nulls = sum(1 for v in result["features_extracted"].values() if v is None)
-        assert nulls == len(result["features_extracted"]), f"{name} expected all-null features"
-        assert result["prospectivity_score"] < 0.1, (
-            f"{name} scored {result['prospectivity_score']} on null features"
-        )
+        assert result is None, f"{name} (old coordinate) has no imagery but was scored"
 
 
 def test_heatmap_grid_is_a_lattice_with_nulls_for_no_data() -> None:
@@ -232,7 +273,8 @@ def test_heatmap_grid_is_a_lattice_with_nulls_for_no_data() -> None:
 def test_heatmap_grid_returns_nulls_outside_the_footprint() -> None:
     """A viewport straddling the raster edge yields null cells, not a crash.
 
-    Gumgaon (21.2333, 78.9333) sits outside the imagery footprint; the heatmap
+    The viewport runs south of the mosaic's 21.29 N edge, where no raster has
+    real pixels; the heatmap
     loop calls the scoring path directly with no router to absorb a failure,
     so the no-data case has to be handled in the function itself.
     """

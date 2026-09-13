@@ -15,7 +15,7 @@ import pandas as pd
 from pyproj import Transformer
 
 from src.data.preprocess.compute_indices import add_indices
-from src.data.preprocess.extract_features import extract_features_bulk
+from src.data.preprocess.extract_features import BAND_FEATURES, extract_features_bulk
 from src.models.prospectivity.autoencoder import load_autoencoder
 from src.models.prospectivity.enrich_features import AE_COLUMNS, embed_points
 from src.models.prospectivity.explain import explain_prediction, load_bundle
@@ -41,11 +41,20 @@ _ENV_MODEL = os.environ.get("PROSPECTIVITY_MODEL")
 ACTIVE_MODEL_PATH: Path = Path(_ENV_MODEL) if _ENV_MODEL else SHIPPED_MODEL_PATH
 MODEL_VERSION: str = ACTIVE_MODEL_PATH.stem
 
-#: Features must come from the same mosaic the active model was trained on,
-#: otherwise inference silently drifts from training. Overridable alongside
-#: the model so a v2 bundle is served with the v2 raster.
+#: Features must come from the mosaic the active model was trained on,
+#: otherwise inference silently drifts from training. v6 was trained on
+#: s2_sausar_v2.tif, yet until 2026-09-13 this defaulted to None, which fell
+#: through to s2_nagpur_smoke_test.tif - a different composite whose gaps are
+#: zeros with no nodata declared, so ~25% of the warm heatmap was scored from
+#: blank pixels. Serving now defaults to the operational mosaic: the training
+#: mosaic byte-for-byte plus a western strip covering Gumgaon. Overridable
+#: alongside the model so another bundle can be served with its own raster.
 _ENV_S2 = os.environ.get("PROSPECTIVITY_S2")
-ACTIVE_S2_PATH: Path | None = Path(_ENV_S2) if _ENV_S2 else None
+ACTIVE_S2_PATH: Path = Path(_ENV_S2) if _ENV_S2 else settings.S2_SERVING_PATH
+
+#: The DEM matching ACTIVE_S2_PATH: the training DEM plus the same strip.
+_ENV_DEM = os.environ.get("PROSPECTIVITY_DEM")
+ACTIVE_DEM_PATH: Path = Path(_ENV_DEM) if _ENV_DEM else settings.DEM_SERVING_PATH
 
 #: The encoder must match the one the active bundle was trained on, or the
 #: 64 AE columns mean something different at inference than in training.
@@ -78,11 +87,12 @@ def _autoencoder():
     return _AE_CACHE["model"]
 
 
-def _covering_tile(lon: float, lat: float) -> Path | None:
-    """First unlabelled tile whose footprint contains the point, if any.
+def _covering_tiles(lon: float, lat: float):
+    """Unlabelled tiles whose footprint contains the point, in name order.
 
     v4 trains on national NGDR records, so inference has to resolve rasters
-    beyond the Sausar mosaic or every out-of-belt query 404s.
+    beyond the Sausar mosaic or every out-of-belt query 404s. A footprint is
+    only a bounding box, so the caller still checks the tile has data there.
     """
     import rasterio
     from rasterio.warp import transform_bounds
@@ -95,31 +105,49 @@ def _covering_tile(lon: float, lat: float) -> Path | None:
         except Exception:  # noqa: BLE001 - unreadable tile must not break serving
             continue
         if left <= lon <= right and bottom <= lat <= top:
-            return tile
-    return None
+            yield tile
+
+
+def has_imagery(frame: pd.DataFrame) -> np.ndarray:
+    """True where all six Sentinel-2 bands hold a real, non-zero reading.
+
+    A zero in a composite band is a gap, not a dark surface, and a raster that
+    declares no nodata returns those zeros as data. Scoring them produced
+    confident numbers from blank pixels - Kandri scored 0.0009 from a blank
+    national tile, and a quarter of the warm heatmap scored from gaps in the
+    old serving mosaic - so such points count as no imagery, exactly like a
+    point outside the raster.
+    """
+    bands = frame.reindex(columns=BAND_FEATURES).astype("float64")
+    return (bands.notna() & (bands != 0.0)).all(axis=1).to_numpy()
 
 
 def build_feature_frame(points: pd.DataFrame) -> pd.DataFrame:
     """Assemble the 78-dim feature frame for points with lon/lat columns."""
     points = points.reset_index(drop=True)
-    frame = add_indices(extract_features_bulk(points, s2_path=ACTIVE_S2_PATH))
+    frame = add_indices(
+        extract_features_bulk(points, s2_path=ACTIVE_S2_PATH, dem_path=ACTIVE_DEM_PATH)
+    )
     embeddings = embed_points(frame, _autoencoder(), raster_path=ACTIVE_S2_PATH)
     frame = pd.concat([frame, embeddings], axis=1)
 
-    # Points outside the primary mosaic fall back to whichever national tile
-    # covers them, matching how their training features were built.
-    missing = frame[AE_COLUMNS].isna().all(axis=1)
-    for index in frame.index[missing]:
-        tile = _covering_tile(float(points.lon[index]), float(points.lat[index]))
-        if tile is None:
-            continue
+    # Points the primary mosaic has no imagery for fall back to a national
+    # tile covering them, matching how their training features were built -
+    # but only a tile with real pixels there. Nagpur_1.tif covers the old
+    # southern mine coordinates by extent while holding only zeros at them.
+    for index in frame.index[~has_imagery(frame)]:
+        lon, lat = float(points.lon[index]), float(points.lat[index])
         one = points.loc[[index], ["lon", "lat"]].reset_index(drop=True)
-        tile_frame = add_indices(extract_features_bulk(one, s2_path=tile))
-        tile_embed = embed_points(tile_frame, _autoencoder(), raster_path=tile)
-        for column in tile_frame.columns:
-            if column in frame.columns:
-                frame.loc[index, column] = tile_frame.iloc[0][column]
-        frame.loc[index, AE_COLUMNS] = tile_embed.iloc[0].to_numpy()
+        for tile in _covering_tiles(lon, lat):
+            tile_frame = add_indices(extract_features_bulk(one, s2_path=tile))
+            if not has_imagery(tile_frame)[0]:
+                continue
+            tile_embed = embed_points(tile_frame, _autoencoder(), raster_path=tile)
+            for column in tile_frame.columns:
+                if column in frame.columns:
+                    frame.loc[index, column] = tile_frame.iloc[0][column]
+            frame.loc[index, AE_COLUMNS] = tile_embed.iloc[0].to_numpy()
+            break
 
     return frame
 
@@ -158,15 +186,17 @@ def predict_point(
     model_path: Path | str | None = None,
     explain: bool = True,
 ) -> dict[str, Any] | None:
-    """Score one location. Returns None if it falls outside the raster."""
+    """Score one location. Returns None where there is no real imagery."""
     points = pd.DataFrame([{"lon": lon, "lat": lat}])
     frame = build_feature_frame(points)
 
-    if frame[AE_COLUMNS].isna().all(axis=1).iloc[0]:
+    if not has_imagery(frame)[0]:
         return None
 
     model_path = model_path or ACTIVE_MODEL_PATH
-    score = float(cap_score(score_frame(frame, model_path)[0]))
+    # float32 clipping leaves 0.9900000095367432, a whisker above the cap; the
+    # heatmap already guards this, and callers of this function need it too.
+    score = min(float(cap_score(score_frame(frame, model_path)[0])), float(SCORE_CAP))
     bundle = load_bundle(model_path)
     row = frame.reindex(columns=bundle["features"]).astype("float64")
 
@@ -253,7 +283,7 @@ def predict_bbox(
     points, step = grid_points(min_lon, min_lat, max_lon, max_lat, grid_resolution_m)
     frame = build_feature_frame(points)
 
-    inside = frame[AE_COLUMNS].notna().all(axis=1).to_numpy()
+    inside = has_imagery(frame) & frame[AE_COLUMNS].notna().all(axis=1).to_numpy()
     scores = np.full(len(frame), np.nan)
     if inside.any():
         scores[inside] = cap_score(score_frame(frame[inside], model_path or ACTIVE_MODEL_PATH))
@@ -297,7 +327,8 @@ def heatmap_grid(
     A cell is None when it lies outside the imagery footprint *or* when every
     feature for it came back null. The second case matters: the older v1
     bundle scored an all-null feature vector at the 0.99 cap, which would have
-    painted the brightest hotspots where nothing was measured.
+    painted the brightest hotspots where nothing was measured. A cell whose
+    bands are zero - a composite gap - is None too (see `has_imagery`).
     """
     cell_w = (max_lon - min_lon) / grid_size
     cell_h = (max_lat - min_lat) / grid_size
@@ -308,7 +339,7 @@ def heatmap_grid(
     points = pd.DataFrame({"lon": mesh_lon.ravel(), "lat": mesh_lat.ravel()})
     frame = build_feature_frame(points)
 
-    usable = frame[AE_COLUMNS].notna().all(axis=1).to_numpy()
+    usable = has_imagery(frame) & frame[AE_COLUMNS].notna().all(axis=1).to_numpy()
     scores = np.full(len(frame), np.nan)
     if usable.any():
         scores[usable] = cap_score(score_frame(frame[usable], model_path or ACTIVE_MODEL_PATH))

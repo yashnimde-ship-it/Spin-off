@@ -49,6 +49,26 @@ class NotImplementedInDemo(ApiError):
     error_code = "not_implemented"
 
 
+class NoImageryAtLocation(ApiError):
+    """A location with no real Sentinel-2 pixels: outside the mosaic, or a gap.
+
+    Uses the flat body rather than FastAPI's `{"detail": ...}` so the client
+    can tell "no imagery here" from a bad request by `error_code` alone.
+    """
+
+    status_code = 404
+    error_code = "no_imagery_at_location"
+
+    def __init__(self, lat: float, lon: float) -> None:
+        super().__init__(
+            detail=f"Sentinel-2 mosaic does not cover ({lat}, {lon})",
+            remedy=(
+                "Location falls outside imagery footprint. "
+                "See /prospectivity/heatmap for served coverage."
+            ),
+        )
+
+
 async def api_error_handler(_request: Request, exc: ApiError) -> JSONResponse:
     body: dict[str, str] = {"error_code": exc.error_code, "detail": exc.detail}
     if exc.remedy:

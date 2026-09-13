@@ -35,7 +35,27 @@ def _sources(tags: list[str]) -> list[dict[str, str]]:
     return [{"tag": tag, "url": SOURCE_URLS[tag]} for tag in tags if tag in SOURCE_URLS]
 
 
+#: Confidence tiers weak enough that the coordinate carries a caution.
+_LOW_CONFIDENCE = ("none", "low", "low_medium")
+
+
+def _coordinate_note(coordinate: dict[str, Any]) -> str | None:
+    """The source's own note, else a caution when the coordinate is weak."""
+    if coordinate.get("note"):
+        return str(coordinate["note"])
+    precision = coordinate.get("coordinate_precision")
+    approximate = bool(precision) and "approximate" in str(precision).lower()
+    if coordinate["confidence"] in _LOW_CONFIDENCE or approximate:
+        return (
+            f"Coordinate confidence is {coordinate['confidence']} "
+            f"({precision or coordinate['source']}). Treat as an approximate "
+            "location, not a surveyed mine boundary."
+        )
+    return None
+
+
 def _mine_payload(name: str, mine: dict[str, object]) -> dict[str, object]:
+    coordinate = settings.MOIL_MINES[name]
     return {
         "mine_name": name,
         "state": mine["state"],
@@ -48,6 +68,15 @@ def _mine_payload(name: str, mine: dict[str, object]) -> dict[str, object]:
         # Present on Kandri alone, so it is always emitted - as null elsewhere -
         # rather than making the frontend probe for an optional key.
         "type_note": mine.get("type_note"),
+        # Coordinate provenance from settings.MOIL_MINES. Every key is always
+        # present; source_url is null where no full URL has been provided.
+        "lat": coordinate["lat"],
+        "lon": coordinate["lon"],
+        "confidence": coordinate["confidence"],
+        "source": coordinate["source"],
+        "source_url": coordinate["source_url"],
+        "coordinate_precision": coordinate["coordinate_precision"],
+        "coordinate_note": _coordinate_note(coordinate),
     }
 
 
@@ -155,9 +184,19 @@ def compute_heatmap(
 ) -> dict[str, Any]:
     """Score a grid, applying the mask and using the on-disk cache."""
     from src.data.masks.registry import apply_mask
-    from src.models.prospectivity.predict import ACTIVE_MODEL_PATH, heatmap_grid
+    from src.models.prospectivity.predict import (
+        ACTIVE_DEM_PATH,
+        ACTIVE_MODEL_PATH,
+        ACTIVE_S2_PATH,
+        heatmap_grid,
+    )
 
-    version = Path(ACTIVE_MODEL_PATH).stem
+    # Imagery is part of the key as well as the model: switching the serving
+    # mosaic changes every score, and stale tiles would otherwise keep being
+    # served for the full 24-hour TTL.
+    version = "|".join(
+        Path(path).stem for path in (ACTIVE_MODEL_PATH, ACTIVE_S2_PATH, ACTIVE_DEM_PATH)
+    )
     key = _cache_key((min_lon, min_lat, max_lon, max_lat), grid_size, mask, version)
     cached = _cache_read(key)
     if cached is not None:
