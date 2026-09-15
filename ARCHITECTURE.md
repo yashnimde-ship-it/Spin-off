@@ -659,6 +659,42 @@ shortfall labels/backtest, OCR/parse failure logs, and diagnostic outputs.
 
 ---
 
+### 7.16 `frontend/` — Next.js dashboard
+
+A Next.js 14 App Router workspace (React 18, TypeScript, Tailwind, MapLibre /
+Mapbox, Recharts, Zustand) that consumes this API. 171 tracked files;
+`node_modules/`, `.next/` and `.env*` are excluded by `frontend/.gitignore`.
+
+| path | contents |
+|---|---|
+| `app/(workspace)/` | routes: `explorer`, `production`, `operations`, `actions`, `pipeline`, `assets`, `compliance`, `reports`, `admin`, `feedback` |
+| `lib/api/client.ts` | fetch wrapper: live/fixture mode, timeouts, `ApiRequestError` / `ContractMismatchError`, and the three backend error shapes (flat 500/404, FastAPI 422) |
+| `lib/api/wire.ts` | the backend's response shapes verbatim, versioned against this contract |
+| `lib/api/*.ts` | one adapter per endpoint, mapping wire shapes onto the frontend contract |
+| `lib/contracts.ts` | strict zod schemas the UI renders from; an unmapped field fails loudly |
+| `components/explorer/` | map canvas, legend, SHAP bar chart, site inspector |
+| `tests/unit`, `tests/e2e` | vitest unit tests and Playwright specs |
+
+**Integration rules the frontend enforces, and why they matter here:**
+
+- **No silent fixtures.** `NEXT_PUBLIC_API_BASE_URL` set means live mode; a
+  failed request surfaces an error rather than falling back to demonstration
+  data. Unset means every surface is labelled as fixtures.
+- **Adapters never invent fields.** A backend response that cannot be mapped
+  raises `ContractMismatchError` naming the disagreement. That is what forced
+  `series` into `/forecast` (v1.9) rather than interpolating months client-side.
+- **The Explorer's asset inventory is synthetic** and says so: the backend
+  scores coordinates and has no waste-dump or slag inventory.
+
+```mermaid
+flowchart LR
+    FE["app/(workspace)/*<br/>server components"] --> AD["lib/api/*.ts<br/>adapters"]
+    AD --> CL["lib/api/client.ts"]
+    CL -- "JSON over HTTP" --> API["FastAPI :8000"]
+    AD --> CT["lib/contracts.ts<br/>strict zod"]
+    CT --> UI["components/*"]
+```
+
 ## 8. Running it
 
 ```bash

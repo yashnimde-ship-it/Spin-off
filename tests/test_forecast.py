@@ -297,6 +297,35 @@ def test_seasonal_naive_forecast_uses_same_month_last_year() -> None:
     assert out["model"]["trained_through"] == "2025-05"
 
 
+def test_seasonal_naive_series_reads_each_month_from_its_own_base() -> None:
+    """Every month of the horizon comes from that month a year earlier."""
+    from src.api.routers.forecast import _seasonal_naive_forecast
+
+    backtest = {"ratio_lower": 0.9, "ratio_upper": 1.2}
+    out = _seasonal_naive_forecast(_synthetic_series(), 3, backtest)
+    series = out["series"]
+
+    assert [point["month"] for point in series] == ["2025-06", "2025-07", "2025-08"]
+    # The synthetic series climbs 1,000 t a month from 100,000 at 2024-01.
+    assert [point["p50"] for point in series] == [105_000.0, 106_000.0, 107_000.0]
+    assert series[-1]["p50"] == pytest.approx(out["predicted_tonnes"])
+
+
+def test_seasonal_naive_series_is_dropped_when_an_intermediate_base_is_missing() -> None:
+    """A hole inside the horizon must not reach the chart as a gap.
+
+    The terminal point is still served: only the month-by-month series needs
+    every base month present.
+    """
+    from src.api.routers.forecast import _seasonal_naive_forecast
+
+    backtest = {"ratio_lower": 0.9, "ratio_upper": 1.2}
+    out = _seasonal_naive_forecast(_synthetic_series(drop="2024-07"), 3, backtest)
+
+    assert out is not None and out["predicted_tonnes"] > 0
+    assert out["series"] == []
+
+
 def test_seasonal_naive_declines_when_last_years_month_is_a_gap() -> None:
     """The series has gaps (2016-03, 2023-03); the router falls back to Prophet."""
     from src.api.routers.forecast import _seasonal_naive_forecast

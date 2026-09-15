@@ -212,6 +212,41 @@ The DB-backed tests do **not** skip when `DATABASE_URL` is set; they run
 against Supabase. If the database is unreachable they will fail rather than
 skip.
 
+## 6. Run the frontend
+
+```bash
+cd frontend
+npm install
+cp .env.example .env.local          # then uncomment NEXT_PUBLIC_API_BASE_URL
+npm run dev                          # http://localhost:3000
+```
+
+`.env.local` needs one line for live mode:
+
+```
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+```
+
+Leave it unset and every surface renders demonstration fixtures, labelled as
+such. Set it and a failed request shows an error: nothing silently falls back
+to synthetic numbers. `NEXT_PUBLIC_MAPBOX_TOKEN` is optional — without it the
+Explorer uses MapLibre on an open basemap and only satellite imagery is
+missing.
+
+Port 3000 is already in the API's CORS allow-list, along with 5173 and 8080.
+
+Verified end to end on 2026-09-15: `/operations`, `/production`, `/explorer`
+and `/pipeline` all render live, driving `/production/history`, `/forecast`
+(horizons 1 and 3), `/shortfall/risk`, `/recommendations` and
+`/dashboard/summary`.
+
+Frontend checks:
+
+```bash
+npm run typecheck                    # tsc --noEmit
+npx vitest run                       # 15 unit tests
+```
+
 ## Known limitations
 
 See `docs/known_issues.md` for the full list with evidence. The short version:

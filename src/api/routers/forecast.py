@@ -118,6 +118,27 @@ def seasonal_naive_backtest(rows: pd.DataFrame, horizon: int) -> dict[str, Any] 
     }
 
 
+def _month_label(period: pd.Period) -> str:
+    """"2026-06" -> "Jun 2026", the label the chart axis renders."""
+    return period.strftime("%b %Y")
+
+
+def _naive_interval_at(rows: pd.DataFrame, months_ahead: int) -> tuple[float, float]:
+    """Interval ratios for a month `months_ahead` out.
+
+    Only 1, 3, 6 and 12 are backtested, so an intermediate month borrows the
+    nearest backtested horizon at or below it - month 2 uses the 1-month
+    ratios, month 5 the 3-month ones. Borrowing downward is the conservative
+    direction: a shorter horizon has the tighter interval, so this never
+    widens an interval on evidence that does not exist.
+    """
+    candidates = [h for h in VALID_HORIZONS if h <= months_ahead] or [min(VALID_HORIZONS)]
+    backtest = seasonal_naive_backtest(rows, max(candidates))
+    if backtest is None:
+        return 1.0, 1.0
+    return backtest["ratio_lower"], backtest["ratio_upper"]
+
+
 def _prophet_accuracy(metrics: pd.DataFrame, horizon: int) -> dict[str, Any] | None:
     """The shipped backtest row, read from the artifact rather than recomputed."""
     at = metrics[metrics.horizon_months == horizon]
@@ -165,6 +186,19 @@ def _prophet_forecast(bundle: dict[str, Any], horizon: int) -> dict[str, Any]:
         raise PredictionFailed(f"prophet prediction failed: {exc}") from exc
 
     row = forecast.iloc[-1]
+    # One point per month of the horizon. The fit already produces them; the
+    # terminal row alone cannot be expanded back into the months in between.
+    series = [
+        {
+            "month": pd.Period(entry.ds, freq="M").strftime("%Y-%m"),
+            "month_label": _month_label(pd.Period(entry.ds, freq="M")),
+            "p10": float(entry.yhat_lower),
+            "p50": float(entry.yhat),
+            "p90": float(entry.yhat_upper),
+        }
+        for entry in forecast.iloc[-horizon:].itertuples()
+    ]
+
     # Whatever components this fitted model actually has - a vanilla bundle has
     # no rainfall or capex term, so the frontend iterates rather than indexing.
     components = {
@@ -183,6 +217,7 @@ def _prophet_forecast(bundle: dict[str, Any], horizon: int) -> dict[str, Any]:
         "predicted_lower_ci": float(row.yhat_lower),
         "predicted_upper_ci": float(row.yhat_upper),
         "ci_level": CI_LEVEL,
+        "series": series,
         "components": components,
         "model": {
             "version": FORECAST_MODEL_VERSION,
@@ -197,7 +232,10 @@ def _prophet_forecast(bundle: dict[str, Any], horizon: int) -> dict[str, Any]:
 
 
 def _seasonal_naive_forecast(
-    series: pd.DataFrame, horizon: int, backtest: dict[str, Any] | None
+    series: pd.DataFrame,
+    horizon: int,
+    backtest: dict[str, Any] | None,
+    rows: pd.DataFrame | None = None,
 ) -> dict[str, Any] | None:
     """Same calendar month one year earlier. None when that month is a gap."""
     if backtest is None:
@@ -211,6 +249,32 @@ def _seasonal_naive_forecast(
         return None
     base = float(tonnes.loc[base_month])
 
+    # One point per month of the horizon, each from its own base month. A month
+    # whose base is a series gap stops the series: the chart must not carry a
+    # hole, and the terminal point is still served on its own.
+    points: list[dict[str, Any]] = []
+    for step in range(1, horizon + 1):
+        month = last + step
+        source = month - 12
+        if source not in tonnes.index or pd.isna(tonnes.loc[source]):
+            points = []
+            break
+        value = float(tonnes.loc[source])
+        lower, upper = (
+            _naive_interval_at(rows, step)
+            if rows is not None
+            else (backtest["ratio_lower"], backtest["ratio_upper"])
+        )
+        points.append(
+            {
+                "month": month.strftime("%Y-%m"),
+                "month_label": _month_label(month),
+                "p10": value * lower,
+                "p50": value,
+                "p90": value * upper,
+            }
+        )
+
     return {
         "forecast_date": date.today().isoformat(),
         "target_period": target.strftime("%Y-%m"),
@@ -219,6 +283,7 @@ def _seasonal_naive_forecast(
         "predicted_lower_ci": base * backtest["ratio_lower"],
         "predicted_upper_ci": base * backtest["ratio_upper"],
         "ci_level": CI_LEVEL,
+        "series": points,
         "components": {"same_month_last_year_tonnes": base},
         "model": {
             "version": SEASONAL_NAIVE_VERSION,
@@ -269,7 +334,7 @@ def get_forecast(request: Request, horizon: int = Query(1, description=f"Months 
     payload: dict[str, Any] | None = None
     if model_used == "seasonal_naive":
         payload = _seasonal_naive_forecast(
-            artifacts.require("production_series"), horizon, naive_backtest
+            artifacts.require("production_series"), horizon, naive_backtest, rows
         )
         if payload is None:
             model_used, reason = "prophet", REASON_NAIVE_UNAVAILABLE

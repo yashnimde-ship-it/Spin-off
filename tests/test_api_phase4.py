@@ -366,8 +366,9 @@ def test_forecast_shape_matches_contract(client: TestClient, horizon: int) -> No
     assert set(body) == {
         "forecast_date", "target_period", "horizon_months", "predicted_tonnes",
         "predicted_lower_ci", "predicted_upper_ci", "ci_level", "components",
-        "model", "model_used", "reason", "accuracy_at_horizon",
+        "series", "model", "model_used", "reason", "accuracy_at_horizon",
     }
+    assert set(body["series"][0]) == {"month", "month_label", "p10", "p50", "p90"}
     assert set(body["model"]) == {
         "version", "variant", "regressors", "trained_through",
         "changepoint_prior_scale", "mcmc_samples", "interval_method",
@@ -433,6 +434,47 @@ def test_forecast_accuracy_comes_from_the_shipped_backtest(
     else:
         assert accuracy["mape"] == pytest.approx(float(expected.naive_mape))
         assert accuracy["skill_vs_naive_pp"] == 0.0
+
+
+@pytest.mark.parametrize("horizon", [1, 3, 6, 12])
+def test_forecast_series_covers_every_month_of_the_horizon(
+    client: TestClient, horizon: int
+) -> None:
+    """The chart needs consecutive monthly points; it cannot interpolate them.
+
+    A single terminal point made the frontend refuse horizons 3, 6 and 12
+    rather than invent the months in between.
+    """
+    import pandas as pd
+
+    body = client.get(f"/forecast?horizon={horizon}").json()
+    series = body["series"]
+    assert len(series) == horizon
+
+    months = [pd.Period(point["month"], freq="M") for point in series]
+    assert months == [months[0] + step for step in range(horizon)], "months must be consecutive"
+    assert str(months[-1]) == body["target_period"], "the series must end at the target period"
+
+
+@pytest.mark.parametrize("horizon", [1, 3, 6, 12])
+def test_forecast_series_terminal_point_equals_the_top_level(
+    client: TestClient, horizon: int
+) -> None:
+    """Two representations of one number must not disagree."""
+    body = client.get(f"/forecast?horizon={horizon}").json()
+    last = body["series"][-1]
+    assert last["p50"] == pytest.approx(body["predicted_tonnes"])
+    assert last["p10"] == pytest.approx(body["predicted_lower_ci"])
+    assert last["p90"] == pytest.approx(body["predicted_upper_ci"])
+
+
+@pytest.mark.parametrize("horizon", [1, 3, 6, 12])
+def test_forecast_series_intervals_bracket_their_point(
+    client: TestClient, horizon: int
+) -> None:
+    for point in client.get(f"/forecast?horizon={horizon}").json()["series"]:
+        assert point["p10"] <= point["p50"] <= point["p90"], point["month"]
+        assert point["month_label"], "the chart axis needs a rendered label"
 
 
 def test_forecast_target_period_advances_with_horizon(client: TestClient) -> None:

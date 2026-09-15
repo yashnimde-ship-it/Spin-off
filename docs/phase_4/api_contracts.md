@@ -1,7 +1,13 @@
-# Phase 4 API Contracts — v1.8
+# Phase 4 API Contracts — v1.9
 
 Source of truth for the frontend. Schemas here are fixed; if implementation
 forces a change, the change is raised before it is made, not after.
+
+**v1.9 changes from v1.8:** `GET /forecast` adds **`series`**, one point per
+month of the horizon, so a chart no longer has to interpolate the months
+between the origin and the terminal point. Additive: every existing field is
+unchanged, and the last `series` entry equals the top-level `predicted_*`
+values.
 
 **v1.8 changes from v1.7:** prospectivity scoring now reads the mosaic v6 was
 trained on (`s2_moil_operational_v1.tif`, the training mosaic plus a western
@@ -339,6 +345,10 @@ months (2025-06 to 2025-11) are all present, so this does not occur today.
   "predicted_lower_ci": 181379.63,
   "predicted_upper_ci": 250086.88,
   "ci_level": 0.80,
+  "series": [
+    {"month": "2026-06", "month_label": "Jun 2026",
+     "p10": 181379.63, "p50": 203731.48, "p90": 250086.88}
+  ],
   "components": {"same_month_last_year_tonnes": 203731.48},
   "model": {
     "version": "seasonal_naive_v1",
@@ -368,6 +378,27 @@ At `horizon=12` the shape is identical, with Prophet's values:
 `changepoint_prior_scale` `0.25`, `mcmc_samples` `300`, `interval_method`
 `mcmc_posterior`, and `components` holding Prophet's terms (`trend`, `yearly`,
 `additive_terms`, `multiplicative_terms`).
+
+**`series`** carries one point per month of the horizon, oldest first, starting
+at the month after `trained_through` and ending at `target_period`. The last
+entry equals the top-level `predicted_tonnes` / `predicted_lower_ci` /
+`predicted_upper_ci`, so a chart can plot `series` alone. `p50` is the point
+estimate, `p10` and `p90` the bounds of the same 80% interval named by
+`ci_level`.
+
+Two properties worth knowing:
+
+- **Intermediate months borrow the nearest backtested interval.** Only
+  horizons 1, 3, 6 and 12 were backtested, so month 2 uses the 1-month interval
+  ratios and month 5 the 3-month ones — always the nearest backtested horizon
+  *at or below* the month. Borrowing downward is the conservative direction: a
+  shorter horizon has the tighter interval, so no interval is widened on
+  evidence that does not exist.
+- **`series` is `[]` when a month inside the horizon has no base.**
+  Seasonal-naive needs the same calendar month a year earlier; if one of those
+  is a series gap, the whole series is withheld rather than served with a hole
+  in it. The terminal point is still returned, so `predicted_tonnes` remains
+  usable.
 
 `components` keys vary with the model. Seasonal-naive has one,
 `same_month_last_year_tonnes`. The shipped Prophet variant has **no rainfall or
