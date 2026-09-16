@@ -30,12 +30,13 @@ import styles from "./app-shell.module.css";
 const COLLAPSE_KEY = "bakufu-sidebar-collapsed";
 
 /** Routes whose figures come from the FastAPI backend in live mode. */
-const LIVE_ROUTES = new Set(["/operations", "/production", "/actions", "/explorer"]);
+const LIVE_ROUTES = new Set(["/operations", "/production", "/actions", "/explorer", "/mines"]);
 
 const navigationGroups = [
   {
     label: "Operations",
     items: [
+      { href: "/mines", label: "Mine Fleet", icon: MapPin },
       { href: "/operations", label: "Command Center", icon: LayoutDashboard },
       {
         href: "/production",

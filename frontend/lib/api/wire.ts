@@ -175,3 +175,30 @@ export interface WireMaskInfo {
   id: string; label: string; source: string;
   description: string; production_source?: string; geojson_path?: string;
 }
+
+export interface WireMine {
+  mine_name: string; state: string; district: string;
+  mine_type: "underground" | "opencast" | "mixed";
+  equipment: string[];
+  capacity_target_tonnes: number | null;
+  notes: string;
+  sources: Array<{ tag: string; url: string }>;
+  type_note: string | null;
+  /** Added in contract v1.8 with the cited-coordinate pass. `source_url` is
+   * null where the coordinate researcher supplied no full URL; the backend
+   * stores null rather than guessing one. */
+  lat: number; lon: number;
+  confidence: "high" | "medium_high" | "low_medium" | "low" | "none";
+  source: string;
+  source_url: string | null;
+  coordinate_precision: string | null;
+  coordinate_note: string | null;
+}
+export interface WireMines {
+  mines: WireMine[];
+  counts: {
+    total: number; underground: number; opencast: number; mixed: number;
+    MH: number; MP: number;
+    with_capacity_target: number; with_generic_fleet_only: number;
+  };
+}

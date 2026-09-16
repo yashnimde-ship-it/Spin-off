@@ -179,3 +179,55 @@ export const ActionResponseSchema = z.object({
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Review state must agree with audit fields." });
 });
 export type ActionResponse = z.infer<typeof ActionResponseSchema>;
+
+/** MOIL fleet roster. `/mines` carries the cited coordinate; the score beside
+ * it is a `/predict/point` reading AT that coordinate, so the two travel
+ * together and a card cannot show a number without the provenance of the point
+ * it was taken at. */
+export const CoordinateConfidenceSchema = z.enum(["high", "medium_high", "low_medium", "low", "none"]);
+export const MineDriverSchema = z.object({
+  feature: Nonempty, label: Nonempty, contribution: Finite, observed: Finite.nullable(),
+}).strict();
+export const MineScoreSchema = z.object({
+  value: ProspectivityScore,
+  model_version: Nonempty,
+  // The backend returns its top five contributions by magnitude and does not
+  // promise three in each direction, so no minimum is required here.
+  drivers: z.array(MineDriverSchema).max(5),
+}).strict();
+export const MineSchema = z.object({
+  name: Nonempty,
+  state: Nonempty,
+  district: Nonempty,
+  mine_type: z.enum(["underground", "opencast", "mixed"]),
+  location: LocationSchema,
+  coordinate_confidence: CoordinateConfidenceSchema,
+  coordinate_source: Nonempty,
+  coordinate_source_url: Nonempty.url().nullable(),
+  coordinate_precision: Nonempty.nullable(),
+  coordinate_note: Nonempty.nullable(),
+  score: MineScoreSchema.nullable(),
+  score_error: Nonempty.nullable(),
+  caveat: Nonempty.nullable(),
+}).strict().superRefine((mine, ctx) => {
+  // Either a score or the stated reason there is none. Both null would render
+  // an empty number with no explanation; both set would leave a stale error
+  // sitting under a live score.
+  if ((mine.score === null) === (mine.score_error === null))
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "A mine must carry either a score or the reason it has none." });
+});
+export type Mine = z.infer<typeof MineSchema>;
+
+export const MineRosterSchema = z.object({
+  provenance: ProvenanceSchema,
+  mines: z.array(MineSchema).min(1),
+  counts: z.object({
+    total: z.number().int().nonnegative(),
+    underground: z.number().int().nonnegative(),
+    opencast: z.number().int().nonnegative(),
+  }).strict(),
+}).strict().superRefine((roster, ctx) => {
+  if (roster.counts.total !== roster.mines.length)
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Roster count must match the mines returned." });
+});
+export type MineRoster = z.infer<typeof MineRosterSchema>;

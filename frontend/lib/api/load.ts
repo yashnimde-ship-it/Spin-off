@@ -16,8 +16,33 @@ import { fetchForecast, fetchProductionHistory, type ForecastHorizon } from "./f
 import { fetchShortfallRisk } from "./shortfall";
 import { fetchRecommendations, type RegisterRow } from "./recommendations";
 import { fetchDashboardSummary, type DashboardResult, type VitalSign } from "./dashboard";
+import type { MineRoster } from "@/lib/contracts";
+import { fetchMineRoster } from "./mines";
 
 export type { RegisterRow, VitalSign, DashboardResult };
+
+/** The fleet roster, with every coordinate scored.
+ *
+ * Live-only: there is no mine fixture and none is invented. Ten synthetic
+ * scores sitting beside ten cited coordinates would be the most misleading
+ * surface in the app — the citations would lend the numbers an authority they
+ * had not earned. Without an API this returns the reason instead.
+ */
+export async function loadMineRoster(): Promise<LoadResult<MineRoster>> {
+  if (!LIVE_MODE) {
+    return {
+      data: null,
+      origin: "fixture",
+      error:
+        "The roster reads GET /mines and scores each coordinate through the model, so it needs the API. Set NEXT_PUBLIC_API_BASE_URL in .env.local and restart the dev server.",
+    };
+  }
+  try {
+    return liveResult(await fetchMineRoster());
+  } catch (error) {
+    return failedResult(error);
+  }
+}
 
 const tonnes = (value: number) => new Intl.NumberFormat("en-IN").format(Math.round(value));
 
