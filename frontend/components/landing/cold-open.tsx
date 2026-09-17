@@ -45,11 +45,11 @@ export function ColdOpen() {
       </div>
       <div className={h.copy}>
         <h1 id="hero-heading" className={`${h.statement} ${h.reveal}`} data-hero-statement>
-          <span>Old waste still</span>
-          <span>holds <em>manganese.</em></span>
+          <span>Most of the belt</span>
+          <span>has never been <em>drilled.</em></span>
         </h1>
         <p className={`${h.secondary} ${h.reveal}`} data-hero-secondary>
-          We find these <strong>Ghost Reserves.</strong>
+          We read it <strong>from orbit</strong> first.
         </p>
       </div>
       <div className={h.foot}>

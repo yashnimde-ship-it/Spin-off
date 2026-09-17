@@ -18,7 +18,7 @@ const CONTOURS: readonly (readonly Pt[])[] = [
   [[-1, 14], [6, 11.5], [13, 13.5], [20, 10], [27, 11.5], [33, 9]],
   [[-1, 21], [7, 19.5], [14, 22], [21, 18.5], [28, 20], [33, 17]],
 ];
-/* Illustrative positions, clear of the two waste candidates at (9, 14) and (22, 18). */
+/* Illustrative positions, clear of the two model targets at (9, 14) and (22, 18). */
 const PLACES: readonly { name: string; at: Pt }[] = [
   { name: "Sausar", at: [4.5, 4.6] },
   { name: "Katangi", at: [24.5, 10.6] },
@@ -171,7 +171,7 @@ export function CellField() {
         className={s.cellCanvas}
         data-cell-field
         role="img"
-        aria-label="Illustrative 32 by 32 prospectivity field clipped to an example belt outline, with hatched exclusions, dotted cells outside the belt, two waste candidate diamonds, example place labels Sausar, Katangi and Tirodi, a north arrow and an illustrative 5 km scale bar"
+        aria-label="Illustrative 32 by 32 prospectivity field clipped to an example belt outline, with hatched exclusions, dotted cells outside the belt, two model target diamonds, example place labels Sausar, Katangi and Tirodi, a north arrow and an illustrative 5 km scale bar"
       >
         Illustration: raw model scores are screened by masks. Out-of-scope cells
         have no prediction.

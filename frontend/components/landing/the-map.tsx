@@ -41,11 +41,11 @@ export function TheMap() {
               <i className={s.nullKey} />
               {"We don't guess here"}
             </span>
-            <span>◇ Waste site</span>
+            <span>◇ Model target</span>
           </div>
         </figure>
         <aside className={`${s.mapInspector} ${m.inspector}`}>
-          <span className={s.mono}>SELECTED EXAMPLE / GR–01</span>
+          <span className={s.mono}>SELECTED EXAMPLE / T–01</span>
           <h3>A score only tells you where to look.</h3>
           <div className={s.miniScores}>
             <span>

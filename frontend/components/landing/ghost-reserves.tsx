@@ -12,16 +12,16 @@ export function GhostReserves() {
       aria-labelledby="ghost-heading"
     >
       <TerrainAtmosphere variant="screening" />
-      <header className={s.label}><span>02 / FIELD NOTES</span><span>GHOST RESERVES / SCREENING</span></header>
+      <header className={s.label}><span>02 / FIELD NOTES</span><span>CANDIDATES / SCREENING</span></header>
       <div className={s.body}>
         <div className={s.content}>
-          <h2 id="ghost-heading" className={s.title}>WHAT WAS<span>LEFT BEHIND.</span></h2>
+          <h2 id="ghost-heading" className={s.title}>WHAT SURVIVES<span>THE MASKS.</span></h2>
           <div className={s.copy}>
-            <p className={s.lead}>Old waste can still have value.</p>
+            <p className={s.lead}>A high score is not permission.</p>
             <div className={s.steps}>
-              <p>We find possible places.</p>
-              <p>Then we remove the unsafe ones.</p>
-              <p>Only the good ones stay.</p>
+              <p>We score every cell in the belt.</p>
+              <p>Then we remove what the rules exclude.</p>
+              <p>Only screened ground stays.</p>
             </div>
           </div>
           <p className={s.caveat}>Geological and occurrence-buffer masks screen candidates. Retained sites still require environmental checks, assays and approvals.</p>

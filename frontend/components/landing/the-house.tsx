@@ -26,7 +26,7 @@ const GLYPHS = {
  * of that room's page. */
 const modules = [
   { title: "COMMAND CENTER", href: "/operations", lines: ["Vital signs", "Forecast + risk", "Review queue"], glyph: GLYPHS.command },
-  { title: "PROSPECTIVITY", href: "/explorer", lines: ["1,024-cell heatmap", "Masks + Ghost Reserves", 'SHAP "why?"'], glyph: GLYPHS.prospect },
+  { title: "PROSPECTIVITY", href: "/explorer", lines: ["1,024-cell heatmap", "Ten ranked targets", 'SHAP "why?"'], glyph: GLYPHS.prospect },
   { title: "PRODUCTION & RISK", href: "/production", lines: ["80% intervals", "Shortfall gauge", "Evidence rail"], glyph: GLYPHS.production },
   { title: "CORRECTIVE ACTIONS", href: "/actions", lines: ["Rule triggers", "Human review", "Audit trail"], glyph: GLYPHS.actions },
   { title: "ASSETS", href: "/assets", lines: ["Mine operations", "Ghost Reserve inventory", "Equipment fleet"], glyph: GLYPHS.assets },

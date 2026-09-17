@@ -21,30 +21,30 @@ export function TheWaste() {
       <TerrainAtmosphere variant="waste" />
       <header className={w.label}>
         <span>01 / FIELD NOTES</span>
-        <span>THE WASTE / 廃</span>
+        <span>THE BELT / 帯</span>
       </header>
       <div className={w.body}>
         <div className={w.content}>
           <h2 id="waste-heading" className={w.title}>
-            THE WASTE <span>IS NOT EMPTY.</span>
+            TEN MINES. <span>ONE BELT.</span>
           </h2>
           <div className={w.copy}>
-            <p className={w.lead}>Old mines left a lot of waste behind.</p>
-            <p className={w.explanation}>That waste can still contain manganese.</p>
-            <p className={w.conclusion}>We check the waste before digging new mines.</p>
+            <p className={w.lead}>MOIL works ten manganese mines in the Sausar Belt.</p>
+            <p className={w.explanation}>The ground between them has never been screened cell by cell.</p>
+            <p className={w.conclusion}>Satellite imagery already covers all of it.</p>
             <span className={w.footnote}>
-              A screening opportunity. Recovery requires sampling, assays and
-              process feasibility.
+              A screening opportunity, not a discovery. Sampling, assays and
+              approvals still come first.
             </span>
           </div>
         </div>
         <figure className={w.art}>
           <WasteCutaway />
           <span className={w.card}>
-            RECLASSIFY
-            <strong>THE DISCARDED.</strong>
+            READ
+            <strong>THE GROUND BETWEEN.</strong>
           </span>
-          <figcaption>Conceptual cutaway · Not an assay</figcaption>
+          <figcaption>Conceptual cutaway · Not a measured section</figcaption>
         </figure>
       </div>
       <div className={w.facts}>

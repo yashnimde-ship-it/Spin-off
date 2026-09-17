@@ -82,7 +82,7 @@ export function ChromeRock({
       className={className}
       viewBox="0 0 500 420"
       role="img"
-      aria-label="Sculptural chrome rock, an illustration of mine waste"
+      aria-label="Sculptural chrome rock, an illustration of manganese-bearing ore"
     >
       <defs>
         <linearGradient id={id + "-metal"} x1="0" y1="0" x2=".9" y2="1">

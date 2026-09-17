@@ -1,6 +1,6 @@
 import { useId } from "react";
 
-/** A conceptual waste specimen, not a mineral map or an assay result. */
+/** A conceptual ground section, not a mineral map or an assay result. */
 export function WasteCutaway() {
   const id = useId().replace(/:/g, "");
   const metal = `${id}-metal`;
@@ -9,8 +9,8 @@ export function WasteCutaway() {
   const shadow = `${id}-shadow`;
   return (
     <svg viewBox="0 0 700 660" role="img" aria-labelledby={`${id}-title ${id}-desc`}>
-      <title id={`${id}-title`}>Layered mine waste with a hidden mineral core</title>
-      <desc id={`${id}-desc`}>An illustrative cutaway of stacked waste strata. Copper-colored internal facets symbolize possible manganese, not measured ore.</desc>
+      <title id={`${id}-title`}>Layered ground with a concealed ore body</title>
+      <desc id={`${id}-desc`}>An illustrative cutaway of stacked strata. Copper-colored internal facets symbolize possible manganese, not measured ore.</desc>
       <defs>
         <linearGradient id={metal} x1="0" y1="0" x2="0.85" y2="1">
           <stop stopColor="var(--waste-ink)" />

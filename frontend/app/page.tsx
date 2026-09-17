@@ -18,7 +18,7 @@ import s from "@/components/landing/story.module.css";
 export const metadata: Metadata = {
   title: "BAKUFU 幕府 — Read the earth. Question the signal.",
   description:
-    "Ghost Reserve intelligence: screen historical mine waste, anticipate production shortfalls, and put evidence before action. SIH26009 prototype for MOIL.",
+    "Manganese prospectivity for the Sausar Belt: score new ground from satellite imagery and terrain, forecast production shortfalls, and put evidence before action. SIH26009 prototype for MOIL.",
 };
 export default function LandingPage() {
   return (

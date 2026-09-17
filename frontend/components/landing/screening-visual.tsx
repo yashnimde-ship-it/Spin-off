@@ -9,7 +9,7 @@ export const SCREEN_LINE_LENGTH = 1000;
 export function ScreeningVisual() {
   const id = useId().replace(/:/g, "");
   return <svg viewBox="0 0 720 710" role="img" aria-labelledby={`${id}-title ${id}-desc`}>
-    <title id={`${id}-title`}>Candidate waste sites passing through screening</title>
+    <title id={`${id}-title`}>Candidate cells passing through screening</title>
     <desc id={`${id}-desc`}>Six illustrative candidates reach a screening plane. Three crossed sites stop; three copper-colored candidates continue below for review.</desc>
     <defs>
       <linearGradient id={`${id}-plate`} x2="1" y2="1"><stop stopColor="var(--screen-ink)" stopOpacity="0.7"/><stop offset="0.4" stopColor="var(--screen-steel)"/><stop offset="1" stopColor="var(--shade-3)"/></linearGradient>
