@@ -15,6 +15,9 @@ import { ApiRequestError, LIVE_MODE, PREDICT_POINT_TIMEOUT_MS, apiPost } from "@
 export interface PointExplanation {
   rawScore: number;
   finalScore: number;
+  /** Uncapped classifier output. Null on a backend older than v1.10. */
+  margin: number | null;
+  rawProbability: number | null;
   maskApplied: string;
   maskDecision: string;
   modelVersion: string;
@@ -59,6 +62,9 @@ export function usePointExplanation(
           data: {
             rawScore: wire.raw_score ?? wire.prospectivity_score,
             finalScore: wire.final_score ?? wire.prospectivity_score,
+            margin: typeof wire.model_margin === "number" ? wire.model_margin : null,
+            rawProbability:
+              typeof wire.raw_probability === "number" ? wire.raw_probability : null,
             maskApplied: wire.mask_applied,
             maskDecision: wire.mask_decision,
             modelVersion: wire.model_version,

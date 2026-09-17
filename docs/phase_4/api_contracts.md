@@ -1,7 +1,12 @@
-# Phase 4 API Contracts — v1.9
+# Phase 4 API Contracts — v1.10
 
 Source of truth for the frontend. Schemas here are fixed; if implementation
 forces a change, the change is raised before it is made, not after.
+
+**v1.10 changes from v1.9:** `POST /predict/point` adds **`raw_probability`**
+and **`model_margin`**, the classifier's own output before the Elkan-Noto
+adjustment and the 0.99 cap (section 12). Additive and nullable: every existing
+field is unchanged, and a client that ignores them sees v1.9 behaviour.
 
 **v1.9 changes from v1.8:** `GET /forecast` adds **`series`**, one point per
 month of the horizon, so a chart no longer has to interpolate the months
@@ -1011,6 +1016,60 @@ curl -X POST "http://127.0.0.1:8000/predict/points_in_bbox" \
   -H "Content-Type: application/json" \
   -d '{"min_lon": 80.10, "min_lat": 21.75, "max_lon": 80.25, "max_lat": 21.85, "grid_resolution_m": 5000}'
 ```
+
+
+---
+
+## 12. `POST /predict/point` — uncapped classifier output (v1.10)
+
+Two additive fields on the existing response body. Nothing else about the
+endpoint changes.
+
+| field | type | meaning |
+|---|---|---|
+| `raw_probability` | `float \| null` | `predict_proba` from the XGBoost bundle, **before** the Elkan-Noto PU adjustment and before the cap. Range `0–1`. |
+| `model_margin` | `float \| null` | The same prediction in log-odds (`output_margin=True`). Unbounded; measured `2.27` to `5.85` across the ten shortlisted targets. |
+
+They are related exactly: `raw_probability == 1 / (1 + exp(-model_margin))`,
+asserted by `test_predict_point_exposes_the_uncapped_classifier_output`.
+
+**Why they exist.** `prospectivity_score` divides the raw probability by the
+PU constant `c = 0.9049` and then caps the result at `0.99`, so **any raw
+probability at or above `0.8959` displays as `0.99`**. That is not a rounding
+artefact at the edge of the distribution — it is most of the interesting
+ground: all ten greenfield targets the Explorer shortlists sit on the cap
+while their raw probabilities span `0.907–0.997`. Ranked on the served score
+alone the list is a ten-way tie, and any order shown is the order the array
+happened to be in.
+
+`model_margin` is the field to rank on. It comes from the model rather than
+from a client-side heuristic, and it separates locations the cap has merged.
+`raw_probability` is the field to *display* beside the score when a user needs
+to see that two capped locations are not equally strong.
+
+Both are `null`-able in the contract and absent on a pre-v1.10 backend. A
+client must not reorder a list from a partial set of margins — either every
+entry has one or the existing order stands, otherwise the list mixes two
+orderings and reads as neither.
+
+```bash
+curl -X POST "http://127.0.0.1:8000/predict/point?mask=none"   -H "Content-Type: application/json"   -d '{"lat": 21.8000, "lon": 80.1900}'
+```
+
+```json
+{
+  "prospectivity_score": 0.99,
+  "raw_score": 0.99,
+  "final_score": 0.99,
+  "raw_probability": 0.9971,
+  "model_margin": 5.849,
+  "model_version": "prospectivity_v6"
+}
+```
+
+Neither field is a calibrated probability of mineralisation. They describe how
+far inside its positive class the classifier places a pixel, on training data
+of boreholes, NGDR occurrences and foreign analogues.
 
 
 ---

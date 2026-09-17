@@ -154,3 +154,5 @@
    so extra content here overflowed the panel and the page footer drew over it.
    Scroll the list instead, as the left panel already does. */
 .workspace .survey-location-list { max-height: 236px; overflow-y: auto; scrollbar-width: thin; }
+.workspace .target-row-numbers { display: flex; align-items: baseline; gap: 6px; }
+.workspace .target-row-margin { color: var(--metadata); font-size: 10px; }

@@ -204,6 +204,19 @@ def predict_point(
     if explain:
         shap_top5 = explain_prediction(row.iloc[0], model_path)["top_5_features"]
 
+    # The served score is compressed twice before a caller sees it: the
+    # Elkan-Noto division by c pushes every confident point past 1.0, and the
+    # cap then pins it to 0.99. With c = 0.905 any classifier probability at or
+    # above 0.896 is displayed as 0.99, so a shortlist of strong locations all
+    # reads identically. These two carry the ordering the cap discards, and the
+    # margin is the quantity shap_top5 explains.
+    design = row.copy()
+    for column, value in (bundle.get("fill_values") or {}).items():
+        if column in design.columns:
+            design[column] = design[column].fillna(value)
+    raw_probability = float(bundle["model"].predict_proba(design)[:, 1][0])
+    model_margin = float(bundle["model"].predict(design, output_margin=True)[0])
+
     extracted = {
         column: (None if pd.isna(frame.iloc[0][column]) else float(frame.iloc[0][column]))
         for column in ALL_FEATURES
@@ -219,6 +232,8 @@ def predict_point(
         "model_version": MODEL_VERSION,
         "lat": lat,
         "lon": lon,
+        "raw_probability": raw_probability,
+        "model_margin": model_margin,
     }
 
 

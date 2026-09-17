@@ -55,7 +55,14 @@ function TargetRow({
       >
         <Badge variant={target.rank <= 3 ? "default" : "secondary"}>{target.id}</Badge>
         <span className="target-row-label">{target.label}</span>
-        <span className="font-mono text-xs tabular-nums">{target.score.toFixed(2)}</span>
+        {/* The score is capped and identical across the shortlist; the margin
+            is what separates them, so both are shown. */}
+        <span className="target-row-numbers font-mono text-xs tabular-nums">
+          <span>{target.score.toFixed(2)}</span>
+          {target.margin !== null && (
+            <span className="target-row-margin">{target.margin.toFixed(1)}</span>
+          )}
+        </span>
       </button>
       {selected && (
         <div className="target-row-detail">
@@ -88,6 +95,17 @@ function TargetRow({
               <dt>Neighbourhood</dt>
               <dd>{target.neighbourhood_score.toFixed(2)} mean of adjacent cells</dd>
             </div>
+            {target.margin !== null && (
+              <div>
+                <dt>Classifier margin</dt>
+                <dd>
+                  {target.margin.toFixed(2)} log-odds
+                  {target.raw_probability !== null
+                    ? ` · p ${target.raw_probability.toFixed(3)} uncapped`
+                    : ""}
+                </dd>
+              </div>
+            )}
             <div>
               <dt>Coordinate precision</dt>
               <dd>± {target.precision_m} m</dd>
@@ -123,8 +141,9 @@ export function TargetPanel({
         </p>
         <p className="text-xs leading-5 text-muted-foreground">
           The ten highest-scoring places the model picks out on ground nobody is already mining.
-          Ranked by score, then by how strongly the surrounding cells score — a lone hot cell
-          beside cold ground is more likely noise than a deposit.
+          Shortlisted by how strongly the surrounding cells score — a lone hot cell beside cold
+          ground is more likely noise than a deposit — then ordered by the classifier&apos;s
+          margin, the small grey figure, because the score beside it is capped.
         </p>
       </div>
 
@@ -158,10 +177,13 @@ export function TargetPanel({
             ))}
           </ul>
           <p className="note">
-            Screening indices, not drill targets: {list.candidates_considered} cells qualified and
-            every one of these sits at the {list.targets[0]?.score.toFixed(2)} cap, so the order
-            comes from the neighbourhood measure rather than the score. Targets are kept at least{" "}
-            {list.min_separation_km} km apart so one anomaly cannot fill the list.
+            Screening indices, not drill targets. {list.candidates_considered} cells qualified, and
+            every one of these sits at the {list.targets[0]?.score.toFixed(2)} cap: the Elkan-Noto
+            adjustment divides by 0.905 and the cap then pins anything above a raw 0.896, so the
+            score cannot separate them. The second figure is the classifier&apos;s margin in
+            log-odds, which does, and the order follows it. Shortlisting used neighbourhood
+            coherence, and targets are kept at least {list.min_separation_km} km apart so one
+            anomaly cannot fill the list.
           </p>
         </>
       )}

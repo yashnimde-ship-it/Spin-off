@@ -149,6 +149,16 @@ export function SelectionInspector({
                       Mask decision: {data.maskDecision.replaceAll("_", " ")}.
                     </p>
                   )}
+                  {data.margin !== null && (
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                      Classifier margin {data.margin.toFixed(2)} log-odds
+                      {data.rawProbability !== null
+                        ? `, p ${data.rawProbability.toFixed(3)} before the Elkan-Noto adjustment`
+                        : ""}
+                      . The displayed score is capped at 0.99, so strong locations report the same
+                      number while their margins differ.
+                    </p>
+                  )}
                   <p className="mt-2 text-xs leading-5 text-muted-foreground">
                     Not a recovery probability or an ore quantity.
                   </p>

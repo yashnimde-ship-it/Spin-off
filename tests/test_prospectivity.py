@@ -254,6 +254,33 @@ def test_v6_promotion_ordering() -> None:
         assert result is None, f"{name} (old coordinate) has no imagery but was scored"
 
 
+def test_predict_point_exposes_the_uncapped_classifier_output() -> None:
+    """The cap hides the model's own ordering; these two fields keep it.
+
+    Ten strong locations all report 0.99 because the Elkan-Noto division pushes
+    each past 1.0 and the cap pins it. The margin still separates them, and it
+    is the quantity shap_top5 explains.
+    """
+    import math
+    from pathlib import Path
+
+    import pytest as _pytest
+
+    from src.models.prospectivity.predict import SCORE_CAP, SHIPPED_MODEL_PATH, predict_point
+
+    if not SHIPPED_MODEL_PATH.exists():
+        _pytest.skip(f"{SHIPPED_MODEL_PATH.name} not present")
+
+    result = predict_point(21.5984, 79.0531, model_path=Path(SHIPPED_MODEL_PATH), explain=False)
+    assert result is not None
+    margin, raw = result["model_margin"], result["raw_probability"]
+    # A margin is log-odds: the sigmoid of it must be the probability reported.
+    assert 1.0 / (1.0 + math.exp(-margin)) == pytest.approx(raw, abs=1e-6)
+    # The served score is capped; the classifier's own probability is not.
+    assert result["prospectivity_score"] <= SCORE_CAP
+    assert 0.0 <= raw <= 1.0
+
+
 def test_heatmap_grid_is_a_lattice_with_nulls_for_no_data() -> None:
     """The grid reshapes cleanly and marks no-data cells as None, not 0.0."""
     from src.models.prospectivity.predict import heatmap_grid

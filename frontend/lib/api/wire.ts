@@ -169,6 +169,12 @@ export interface WirePredictPoint {
   mask_decision: string;
   raw_score: number | null;
   final_score: number | null;
+  /** Added in contract v1.10. The classifier's own probability and log-odds,
+   * before the Elkan-Noto division and the 0.99 cap. Both of those compress
+   * the top of the range, so every strong location reports 0.99 without
+   * these. `model_margin` is what `shap_top5` explains. */
+  raw_probability?: number | null;
+  model_margin?: number | null;
 }
 
 export interface WireMaskInfo {

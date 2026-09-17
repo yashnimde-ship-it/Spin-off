@@ -24,12 +24,17 @@
  *     more likely noise. Ranking by distance-from-mine was tried first and
  *     rejected: that measure maximises at the corners of the bbox, so it
  *     selected the edge of the study area rather than geology.
+ *
+ * Those two SHORTLIST. The order of the ten comes from the classifier's own
+ * margin at each refined coordinate, read from /predict/point: the served
+ * score is capped at 0.99 and every target sits on it, while the margins
+ * measured 2.27 to 5.85 across the same ten.
  */
 
 import type { MaskMode, TargetList } from "@/lib/contracts";
 import { TargetListSchema } from "@/lib/contracts";
-import type { WireHeatmap, WireMines } from "./wire";
-import { HEATMAP_TIMEOUT_MS, apiGet } from "./client";
+import type { WireHeatmap, WireMines, WirePredictPoint } from "./wire";
+import { HEATMAP_TIMEOUT_MS, PREDICT_POINT_TIMEOUT_MS, apiGet, apiPost } from "./client";
 
 /** The pre-warmed belt viewport. Requesting one the backend did not warm is
  * what makes the map look hung: a cold heatmap is ~38s. */
@@ -146,6 +151,9 @@ export async function fetchTopTargets(signal?: AbortSignal): Promise<TargetList>
         km: nearest.km,
       };
     })
+    // Shortlisting, not final order. Every candidate here reports the same
+    // capped 0.99, so neighbourhood coherence decides which cells make the cut;
+    // the classifier's margin then orders the ones that do.
     .sort((a, b) =>
       b.score - a.score ||
       b.neighbourhood - a.neighbourhood ||
@@ -183,6 +191,36 @@ export async function fetchTopTargets(signal?: AbortSignal): Promise<TargetList>
     }),
   );
 
+  // The score is capped at 0.99 and every target sits on it, so the list would
+  // otherwise be ordered by a heuristic alone. One point query per target
+  // returns the classifier's own margin, which does separate them: measured
+  // 2.27 to 5.85 across these ten.
+  const scored = await Promise.all(
+    refined.map(async (entry) => {
+      try {
+        const point = await apiPost<WirePredictPoint>(
+          "/predict/point",
+          { lat: entry.lat, lon: entry.lon },
+          { query: { mask: "none" }, timeoutMs: PREDICT_POINT_TIMEOUT_MS, signal },
+        );
+        return {
+          ...entry,
+          margin: typeof point.model_margin === "number" ? point.model_margin : null,
+          rawProbability: typeof point.raw_probability === "number" ? point.raw_probability : null,
+        };
+      } catch {
+        // A failed point query must not lose the target: it keeps its place in
+        // the shortlist and reports no margin.
+        return { ...entry, margin: null as number | null, rawProbability: null as number | null };
+      }
+    }),
+  );
+  // Only reorder when every margin arrived. A partial sort would mix two
+  // orderings and read as neither.
+  const ordered = scored.every((entry) => entry.margin !== null)
+    ? [...scored].sort((a, b) => (b.margin as number) - (a.margin as number))
+    : scored;
+
   return TargetListSchema.parse({
     provenance: {
       data_origin: "live",
@@ -194,7 +232,7 @@ export async function fetchTopTargets(signal?: AbortSignal): Promise<TargetList>
     mask: "geological",
     candidates_considered: candidates.length,
     min_separation_km: MIN_SEPARATION_KM,
-    targets: refined.map((entry, index) => ({
+    targets: ordered.map((entry, index) => ({
       id: `T${index + 1}`,
       rank: index + 1,
       label: `${Math.round(entry.candidate.km)} km ${bearingFrom(entry.candidate.nearest.lat, entry.candidate.nearest.lon, entry.lat, entry.lon)} of ${entry.candidate.nearest.mine_name}`,
@@ -208,6 +246,8 @@ export async function fetchTopTargets(signal?: AbortSignal): Promise<TargetList>
       ),
       greenfield: true,
       precision_m: entry.precision_m,
+      margin: entry.margin,
+      raw_probability: entry.rawProbability,
     })),
   });
 }

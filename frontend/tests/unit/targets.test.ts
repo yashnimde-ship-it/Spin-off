@@ -75,11 +75,32 @@ function payload(scores: number[][], bbox: number[], grid: number, mask: string)
 }
 
 let refineCalls: string[] = [];
+let pointCalls: Array<{ lat: number; lon: number }> = [];
+
+/** Margins are a function of latitude, so the expected order is knowable here
+ * and deliberately differs from the shortlist order. */
+const marginFor = (lat: number) => (lat - 21) * 10;
 
 function stubFetch() {
-  return vi.fn(async (input: string | URL) => {
+  return vi.fn(async (input: string | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     if (url.pathname === "/mines") return new Response(JSON.stringify(MINES), { status: 200 });
+
+    if (url.pathname === "/predict/point") {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { lat: number; lon: number };
+      pointCalls.push(body);
+      const margin = marginFor(body.lat);
+      return new Response(
+        JSON.stringify({
+          prospectivity_score: 0.99, predicted_type: "unknown", uncertainty: 0.02,
+          features_extracted: {}, shap_top5: [], model_version: "prospectivity_v6",
+          lat: body.lat, lon: body.lon, prediction_id: 1,
+          mask_applied: "none", mask_decision: "n/a", raw_score: 0.99, final_score: 0.99,
+          model_margin: margin, raw_probability: 1 / (1 + Math.exp(-margin)),
+        }),
+        { status: 200 },
+      );
+    }
 
     const grid = Number(url.searchParams.get("grid_size"));
     const mask = url.searchParams.get("mask") ?? "none";
@@ -103,6 +124,7 @@ describe("top greenfield targets", () => {
     vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "http://backend.test");
     vi.stubGlobal("fetch", stubFetch());
     refineCalls = [];
+    pointCalls = [];
     vi.resetModules();
   });
   afterEach(() => {
@@ -130,15 +152,18 @@ describe("top greenfield targets", () => {
     expect(list.targets[0]!.id).toBe("T1");
   });
 
-  it("ranks a coherent anomaly above an isolated cap cell", async () => {
+  it("shortlists a coherent anomaly ahead of an isolated cap cell", async () => {
     const list = await run();
-    const [first, second] = list.targets;
-    expect(first!.score).toBeCloseTo(0.99);
-    expect(second!.score).toBeCloseTo(0.99);
-    // Same score, so the neighbourhood measure decides the order.
-    expect(first!.neighbourhood_score).toBeGreaterThan(second!.neighbourhood_score);
-    expect(first!.neighbourhood_score).toBeGreaterThan(0.3);
-    expect(second!.neighbourhood_score).toBeLessThan(0.3);
+    // Shortlisting, not final order: the margin orders the ten, but coherence
+    // decides which cells get one of the slots. Both cap cells qualify, so each
+    // is found here by its surroundings rather than by its position.
+    const coherent = list.targets.find((t) => t.neighbourhood_score > 0.3);
+    const isolated = list.targets.find((t) => t.neighbourhood_score < 0.2);
+    expect(coherent).toBeDefined();
+    expect(isolated).toBeDefined();
+    expect(coherent!.score).toBeCloseTo(0.99);
+    expect(isolated!.score).toBeCloseTo(0.99);
+    expect(coherent!.neighbourhood_score).toBeGreaterThan(isolated!.neighbourhood_score);
   });
 
   it("excludes ground inside the occurrence buffer", async () => {
@@ -165,6 +190,52 @@ describe("top greenfield targets", () => {
       expect(target.precision_m).toBeGreaterThan(0);
       expect(target.precision_m).toBeLessThan(1000);
     }
+  });
+
+  it("orders the shortlist by the classifier margin, not the capped score", async () => {
+    const list = await run();
+    // Every target reports the same capped score, so the score cannot order them.
+    expect(new Set(list.targets.map((t) => t.score))).toEqual(new Set([0.99]));
+    const margins = list.targets.map((t) => t.margin as number);
+    expect(margins.every((m) => typeof m === "number")).toBe(true);
+    expect([...margins]).toEqual([...margins].sort((a, b) => b - a));
+    // Ranks and ids are renumbered to the final order, not the shortlist order.
+    expect(list.targets.map((t) => t.id)).toEqual(
+      list.targets.map((_, index) => `T${index + 1}`),
+    );
+    expect(pointCalls).toHaveLength(list.targets.length);
+  });
+
+  it("carries the uncapped probability beside the capped score", async () => {
+    const list = await run();
+    for (const target of list.targets) {
+      expect(target.raw_probability).not.toBeNull();
+      expect(target.raw_probability as number).toBeGreaterThan(0);
+      expect(target.raw_probability as number).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("keeps the shortlist order when a backend sends no margin", async () => {
+    // Contract v1.9 and older: the fields are absent, so nothing can be
+    // reordered and the list must not pretend otherwise.
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/predict/point") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { lat: number; lon: number };
+        return new Response(JSON.stringify({
+          prospectivity_score: 0.99, predicted_type: "unknown", uncertainty: 0.02,
+          features_extracted: {}, shap_top5: [], model_version: "prospectivity_v6",
+          lat: body.lat, lon: body.lon, prediction_id: 1,
+          mask_applied: "none", mask_decision: "n/a", raw_score: 0.99, final_score: 0.99,
+        }), { status: 200 });
+      }
+      return stubFetch()(input, init);
+    }));
+    const list = await run();
+    expect(list.targets.every((t) => t.margin === null)).toBe(true);
+    expect(list.targets[0]!.neighbourhood_score).toBeGreaterThanOrEqual(
+      list.targets[1]!.neighbourhood_score,
+    );
   });
 
   it("names each target by bearing and distance from the nearest mine", async () => {

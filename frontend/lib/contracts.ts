@@ -274,6 +274,14 @@ export const TargetSchema = z.object({
   greenfield: z.literal(true),
   /** Half-height of the refined sub-cell: the coordinate is good to about this. */
   precision_m: Finite.positive(),
+  /** The classifier's log-odds at this coordinate. Every target reports a
+   * capped 0.99, so this is what actually orders the shortlist. Null against a
+   * backend older than contract v1.10, which did not expose it; the panel then
+   * shows the score alone rather than inventing a number. */
+  margin: Finite.nullable(),
+  /** The same classifier's probability, before the Elkan-Noto division and the
+   * cap. Runs to three decimals where `score` cannot. */
+  raw_probability: Fraction.nullable(),
 }).strict();
 export type Target = z.infer<typeof TargetSchema>;
 
