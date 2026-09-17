@@ -11,8 +11,9 @@
  * score without the provenance of the point it was taken at.
  */
 
-import type { MineRoster } from "@/lib/contracts";
-import { MineRosterSchema } from "@/lib/contracts";
+import type { MineLocation, MineRoster } from "@/lib/contracts";
+import { MineLocationSchema, MineRosterSchema } from "@/lib/contracts";
+import { z } from "zod";
 import type { WireMines, WirePredictPoint } from "./wire";
 import { ApiRequestError, PREDICT_POINT_TIMEOUT_MS, apiGet, apiPost } from "./client";
 
@@ -110,6 +111,24 @@ export function adaptMineRoster(
       opencast: wire.counts.opencast,
     },
   });
+}
+
+/** Positions only, for the map. No scoring: see MineLocationSchema. */
+export async function fetchMineLocations(signal?: AbortSignal): Promise<MineLocation[]> {
+  const wire = await apiGet<WireMines>("/mines", { signal });
+  return z.array(MineLocationSchema).parse(
+    wire.mines.map((mine) => ({
+      name: mine.mine_name,
+      state: mine.state,
+      district: mine.district,
+      mine_type: mine.mine_type,
+      location: { longitude: mine.lon, latitude: mine.lat },
+      coordinate_confidence: mine.confidence,
+      coordinate_source: mine.source,
+      coordinate_source_url: mine.source_url,
+      coordinate_note: mine.coordinate_note,
+    })),
+  );
 }
 
 /** Roster plus one score per mine. The scores are requested in parallel: ten

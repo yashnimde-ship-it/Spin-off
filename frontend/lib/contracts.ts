@@ -232,6 +232,25 @@ export const MineRosterSchema = z.object({
 });
 export type MineRoster = z.infer<typeof MineRosterSchema>;
 
+/** A mine's identity and cited coordinate, without a score.
+ *
+ * The map needs ten positions, not ten model runs: scoring every mine to draw
+ * a marker would cost ten /predict/point calls (and ten prediction rows) on
+ * every Explorer load. The inspector fetches a score for the one that is
+ * selected. */
+export const MineLocationSchema = z.object({
+  name: Nonempty,
+  state: Nonempty,
+  district: Nonempty,
+  mine_type: z.enum(["underground", "opencast", "mixed"]),
+  location: LocationSchema,
+  coordinate_confidence: CoordinateConfidenceSchema,
+  coordinate_source: Nonempty,
+  coordinate_source_url: Nonempty.url().nullable(),
+  coordinate_note: Nonempty.nullable(),
+}).strict();
+export type MineLocation = z.infer<typeof MineLocationSchema>;
+
 /** Model-proposed exploration targets: the highest-scoring ground the model
  * picks out that nobody is already mining.
  *

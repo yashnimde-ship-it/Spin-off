@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FeatureCollection, Polygon } from "geojson";
 import type { MaskMode } from "@/lib/contracts";
-import type { SiteFixture } from "@/fixtures/predictions";
+import { DEMO_SITES } from "@/fixtures/predictions";
 import { buildProspectivitySurface, type CellProperties } from "@/fixtures/prospectivity-surface";
 import { LIVE_MODE } from "@/lib/api/client";
 import { WARM_VIEWPORTS, fetchHeatmap } from "@/lib/api/heatmap";
@@ -31,8 +31,14 @@ const EMPTY: FeatureCollection<Polygon, CellProperties> = { type: "FeatureCollec
  * documented cold path is ~38s, and requesting a viewport it did not warm is
  * what makes the map look hung.
  */
-export function useProspectivitySurface(sites: readonly SiteFixture[], mask: MaskMode): SurfaceState {
-  const fixtureSurface = useMemo(() => buildProspectivitySurface(sites, mask), [sites, mask]);
+export function useProspectivitySurface(mask: MaskMode): SurfaceState {
+  // Fixture mode still needs somewhere to draw its synthetic blobs, and the
+  // demo sites are the only coordinates available before the API answers. In
+  // live mode this is never used: the surface is the served lattice.
+  const fixtureSurface = useMemo(
+    () => buildProspectivitySurface(DEMO_SITES.filter((site) => site.scope_status === "in_scope"), mask),
+    [mask],
+  );
   const [state, setState] = useState<Omit<SurfaceState, "surface"> & { surface: FeatureCollection<Polygon, CellProperties> | null }>({
     surface: null, loading: LIVE_MODE, error: null, origin: LIVE_MODE ? "live" : "fixture",
     cached: false, note: null, cellsScored: null, cellsNoData: null,

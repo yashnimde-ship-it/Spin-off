@@ -7,17 +7,16 @@
  * (as components/mines/mine-roster.tsx uses), mono `tabular-nums` for
  * coordinates. No new tokens.
  *
- * Every row states what it is: a cell centre from the served heatmap, refined
- * once, on ground outside the 5 km occurrence buffer. The coordinate is good to
- * the stated precision and no better.
+ * The list is fetched by ExplorerWorkspace and passed in, so the map and this
+ * panel render the same ten targets from one request.
  */
 
 import { useState } from "react";
 import { Check, Copy, Crosshair, ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { Target } from "@/lib/contracts";
-import { useTopTargets } from "@/hooks/use-top-targets";
+import type { Target, TargetList } from "@/lib/contracts";
+import { useExplorerStore } from "./explorer-provider";
 
 function coordinates(target: Target): string {
   return `${target.location.latitude.toFixed(4)}, ${target.location.longitude.toFixed(4)}`;
@@ -30,7 +29,7 @@ function TargetRow({
 }: {
   target: Target;
   selected: boolean;
-  onSelect: (target: Target) => void;
+  onSelect: () => void;
 }) {
   const [copied, setCopied] = useState(false);
   const text = coordinates(target);
@@ -51,7 +50,8 @@ function TargetRow({
         type="button"
         className="target-row-head"
         aria-expanded={selected}
-        onClick={() => onSelect(target)}
+        data-testid={`target-${target.id.toLowerCase()}`}
+        onClick={onSelect}
       >
         <Badge variant={target.rank <= 3 ? "default" : "secondary"}>{target.id}</Badge>
         <span className="target-row-label">{target.label}</span>
@@ -104,13 +104,16 @@ function TargetRow({
 }
 
 export function TargetPanel({
-  selectedId,
-  onSelect,
+  list,
+  loading,
+  error,
 }: {
-  selectedId: string | null;
-  onSelect: (target: Target | null) => void;
+  list: TargetList | null;
+  loading: boolean;
+  error: string | null;
 }) {
-  const { targets, loading, error } = useTopTargets();
+  const selected = useExplorerStore((s) => s.selected);
+  const select = useExplorerStore((s) => s.select);
 
   return (
     <div className="target-panel">
@@ -119,10 +122,9 @@ export function TargetPanel({
           <Crosshair size={13} aria-hidden="true" /> Model targets
         </p>
         <p className="text-xs leading-5 text-muted-foreground">
-          The ten highest-scoring places the model picks out on ground nobody is
-          already mining. Ranked by score, then by how strongly the surrounding
-          cells score — a lone hot cell beside cold ground is more likely noise
-          than a deposit.
+          The ten highest-scoring places the model picks out on ground nobody is already mining.
+          Ranked by score, then by how strongly the surrounding cells score — a lone hot cell
+          beside cold ground is more likely noise than a deposit.
         </p>
       </div>
 
@@ -137,24 +139,29 @@ export function TargetPanel({
         </p>
       )}
 
-      {targets && (
+      {list && (
         <>
           <ul className="target-list">
-            {targets.targets.map((target) => (
+            {list.targets.map((target) => (
               <TargetRow
                 key={target.id}
                 target={target}
-                selected={selectedId === target.id}
-                onSelect={(chosen) => onSelect(selectedId === chosen.id ? null : chosen)}
+                selected={selected?.kind === "target" && selected.id === target.id}
+                onSelect={() =>
+                  select(
+                    selected?.kind === "target" && selected.id === target.id
+                      ? null
+                      : { kind: "target", id: target.id },
+                  )
+                }
               />
             ))}
           </ul>
           <p className="note">
-            Screening indices, not drill targets: {targets.candidates_considered} cells
-            qualified and every one of these sits at the {targets.targets[0]?.score.toFixed(2)}{" "}
-            cap, so the order comes from the neighbourhood measure rather than the score.
-            Targets are kept at least {targets.min_separation_km} km apart so one anomaly
-            cannot fill the list.
+            Screening indices, not drill targets: {list.candidates_considered} cells qualified and
+            every one of these sits at the {list.targets[0]?.score.toFixed(2)} cap, so the order
+            comes from the neighbourhood measure rather than the score. Targets are kept at least{" "}
+            {list.min_separation_km} km apart so one anomaly cannot fill the list.
           </p>
         </>
       )}

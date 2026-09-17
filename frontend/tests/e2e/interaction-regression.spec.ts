@@ -1,47 +1,31 @@
 import { expect, test } from "@playwright/test";
 
-test("Search, evidence and masks preserve their independent truth states", async ({ page }) => {
+// Live first paint compiles the route and scores the belt; see explorer.spec.ts.
+test.describe.configure({ timeout: 300_000 });
+
+test("Explorer selection and masks keep their independent truth states", async ({ page }) => {
   await page.goto("/explorer");
-  const search = page.getByRole("textbox", { name: "Search fixture sites, Sandur or Bonai" });
-  const inspector = page.getByRole("complementary", { name: "Site inspector" });
-  await expect(page.getByTestId("raw-score")).toHaveText("0.84");
+  const inspector = page.getByRole("complementary", { name: "Selection inspector" });
+  await expect(page.locator(".map-marker--target")).toHaveCount(10, { timeout: 240_000 });
 
-  await search.fill("unlisted location");
-  await expect(page.getByText("No fixture found. Scope has not been inferred.")).toBeVisible();
-  await search.press("Escape");
-  await expect(search).toHaveValue("");
-  await expect(page.getByTestId("raw-score")).toHaveText("0.84");
-
-  await page.getByRole("switch", { name: "Ghost Reserves", exact: true }).click();
-  await search.fill("dump C");
-  await page.getByRole("button", { name: "Demo waste dump C · outside buffer Inspect" }).click();
-  await expect(page.getByText("This site is outside the Ghost Reserve filter. Turn Ghost Reserves off to inspect it.")).toBeVisible();
-  await expect(page.getByTestId("site-demo-dump-c")).toHaveCount(0);
-  await expect(page.getByTestId("raw-score")).toHaveText("0.84");
-
-  // Scope queries remain available while the material filter is enabled.
-  await search.fill("Sandur");
-  await page.getByRole("button", { name: "Sandur Outside scope", exact: true }).click();
-  await expect(page.getByTestId("scope-message")).toHaveText("Outside validated scope (Sausar Belt)");
-  await expect(page.getByTestId("final-score")).toHaveCount(0);
-  await page.getByRole("button", { name: "Clear selection", exact: true }).click();
+  // Nothing is selected until the viewer selects it: the panel must not open
+  // on a guess.
   await expect(inspector.getByRole("heading", { name: "Inspect a location" })).toBeVisible();
 
-  await page.getByTestId("site-demo-slag-b").click();
-  await expect(page.getByTestId("raw-score")).toHaveText("0.62");
-  await expect(inspector.getByText("Processed slag differs from the geology used for training.", { exact: false })).toBeVisible();
+  // A mine and a target are different kinds of thing, and the panel says which.
+  await page.getByTestId("mine-ukwa").click();
+  await expect(inspector.getByText("Operating mine", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("raw-score")).toHaveText(/^0\.\d\d$/, { timeout: 90_000 });
+  await page.getByTestId("target-t2").click();
+  await expect(inspector.getByText("Model target", { exact: true })).toBeVisible();
+
+  // Switching masks re-scores the selection rather than leaving the old number.
   await page.getByRole("switch", { name: "Geological", exact: true }).click();
-  await page.getByRole("switch", { name: "5km buffer", exact: true }).click();
-  await expect(page.getByTestId("final-score")).toHaveText("0.62");
-  await inspector.getByRole("tab", { name: "Constraints", exact: true }).click();
-  await expect(inspector.getByText("No screening mask is active.")).toBeVisible();
-  await expect(inspector.getByText("Mask inclusion is not environmental approval.", { exact: false })).toBeVisible();
-  await expect(page.getByTestId("site-demo-dump-c")).toHaveCount(0);
-  await page.getByRole("switch", { name: "Ghost Reserves", exact: true }).click();
-  await page.getByTestId("site-farmland-control").click();
-  await expect(page.getByTestId("raw-score")).toHaveText("0.99");
-  await inspector.getByRole("tab", { name: "Why?", exact: true }).click();
-  await expect(inspector.getByText("No numeric SHAP payload was provided for this diagnostic.", { exact: false })).toBeVisible();
+  await expect(inspector.getByText(/none mask/)).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByTestId("raw-score")).toHaveText(/^0\.\d\d$/, { timeout: 90_000 });
+
+  await page.getByRole("button", { name: "Clear selection", exact: true }).click();
+  await expect(inspector.getByRole("heading", { name: "Inspect a location" })).toBeVisible();
 });
 
 test("Review register links preserve selected evidence and never create approvals", async ({ page }) => {

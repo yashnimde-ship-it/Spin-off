@@ -53,15 +53,21 @@ describe("scientific meaning at the API boundary", () => {
   });
 });
 describe("state isolation and cancellation", () => {
-  it("does not share stores between users and keeps Ghost filtering independent of masks", () => {
+  it("does not share stores between users, and keeps mines and targets apart", () => {
     const a = createExplorerStore(); const b = createExplorerStore();
-    a.getState().selectSite("demo-dump-c");
-    a.getState().setGhostOnly(true);
+    a.getState().select({ kind: "mine", id: "Balaghat" });
     a.getState().setMask("none");
-    expect(a.getState().selectedSiteId).toBeNull();
-    expect(a.getState().ghostOnly).toBe(true);
-    expect(b.getState().activeMask).toBe("both");
-    expect(b.getState().ghostOnly).toBe(false);
+    expect(a.getState().selected).toEqual({ kind: "mine", id: "Balaghat" });
+    // A target may share an id space with nothing else: the kind carries the
+    // difference between a mine that exists and a place the model proposes.
+    a.getState().select({ kind: "target", id: "T1" });
+    expect(a.getState().selected).toEqual({ kind: "target", id: "T1" });
+    a.getState().select(null);
+    expect(a.getState().selected).toBeNull();
+    // The default mask is the one the target ranking runs under; "both" would
+    // hide the greenfield ground those targets sit on.
+    expect(b.getState().activeMask).toBe("geological");
+    expect(b.getState().selected).toBeNull();
   });
   it("cancels a superseded mock request", async () => {
     const controller = new AbortController();
