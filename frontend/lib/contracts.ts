@@ -231,3 +231,44 @@ export const MineRosterSchema = z.object({
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Roster count must match the mines returned." });
 });
 export type MineRoster = z.infer<typeof MineRosterSchema>;
+
+/** Model-proposed exploration targets: the highest-scoring ground the model
+ * picks out that nobody is already mining.
+ *
+ * `greenfield` is a literal true because the list is greenfield by
+ * construction — a cell inside the 5 km occurrence buffer is known ground, not
+ * a prediction, and is filtered out before ranking. The field is kept so the
+ * UI states the claim rather than implying it. */
+export const BearingSchema = z.enum(["N", "NE", "E", "SE", "S", "SW", "W", "NW"]);
+export const TargetSchema = z.object({
+  id: Nonempty,                       // "T1"
+  rank: z.number().int().min(1),
+  label: Nonempty,                    // "23 km NE of Gumgaon"
+  location: LocationSchema,
+  score: ProspectivityScore,
+  /** Mean score of the eight surrounding cells. A cap-scoring cell beside cold
+   * ground is more likely noise than a deposit, so this orders the ties. */
+  neighbourhood_score: ProspectivityScore,
+  nearest_mine: Nonempty,
+  km_to_nearest_mine: Finite.nonnegative(),
+  bearing_from_mine: BearingSchema,
+  greenfield: z.literal(true),
+  /** Half-height of the refined sub-cell: the coordinate is good to about this. */
+  precision_m: Finite.positive(),
+}).strict();
+export type Target = z.infer<typeof TargetSchema>;
+
+export const TargetListSchema = z.object({
+  provenance: ProvenanceSchema,
+  bbox: z.tuple([Finite, Finite, Finite, Finite]),
+  mask: z.literal("geological"),
+  candidates_considered: z.number().int().nonnegative(),
+  min_separation_km: Finite.positive(),
+  targets: z.array(TargetSchema).max(10),
+}).strict().superRefine((list, ctx) => {
+  list.targets.forEach((target, index) => {
+    if (target.rank !== index + 1)
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Targets must be ranked consecutively from 1." });
+  });
+});
+export type TargetList = z.infer<typeof TargetListSchema>;

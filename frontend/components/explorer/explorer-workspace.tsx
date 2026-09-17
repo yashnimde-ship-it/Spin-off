@@ -11,6 +11,8 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useProspectivitySurface } from "@/hooks/use-prospectivity-surface";
+import { TargetPanel } from "./target-panel";
+import type { Target } from "@/lib/contracts";
 
 // Next.js 14: ssr:false belongs inside this Client Component, not page.tsx.
 const MapCanvas = dynamic(() => import("./map-canvas"), {
@@ -110,6 +112,10 @@ export function ExplorerWorkspace() {
   const selectedId = useExplorerStore((s) => s.selectedSiteId);
   const select = useExplorerStore((s) => s.selectSite);
   const [query, setQuery] = useState("");
+  // The model's proposed targets are separate from the fixture site selection:
+  // one is model output, the other a hand-placed demonstration inventory, and
+  // conflating them in one selection would blur exactly that distinction.
+  const [selectedTarget, setSelectedTarget] = useState<Target | null>(null);
   const [mapNotice, setMapNotice] = useState<string | null>(null);
   // GHOST RESERVE INTEGRATION: filter waste/slag AND 5km membership, independent
   // of the mask switches. Both map and site list consume this exact collection.
@@ -191,6 +197,10 @@ export function ExplorerWorkspace() {
               <MaskToggleGroup />
             </div>
           </div>
+          <TargetPanel
+            selectedId={selectedTarget?.id ?? null}
+            onSelect={setSelectedTarget}
+          />
           <SiteInspector />
         </section>
         <section
