@@ -148,3 +148,9 @@
 .workspace .target-row-facts dt { font-size: 11px; color: var(--metadata); }
 .workspace .target-row-facts dd { margin: 0; font-size: 12px; }
 @media (max-width: 720px) { .workspace .target-row-facts { grid-template-columns: minmax(0, 1fr); } }
+
+/* The mine roster is ten rows where the old fixture list was six. The survey
+   grid stretches its columns to one row height (.survey-left caps at 740px),
+   so extra content here overflowed the panel and the page footer drew over it.
+   Scroll the list instead, as the left panel already does. */
+.workspace .survey-location-list { max-height: 236px; overflow-y: auto; scrollbar-width: thin; }

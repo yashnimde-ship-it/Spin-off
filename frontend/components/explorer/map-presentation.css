@@ -248,3 +248,12 @@
 .map-legend-glyph { display: inline-flex; }
 .map-legend-glyph--mine { color: var(--paper); }
 .map-legend-glyph--target { color: var(--glow); }
+
+/* Compact legend. At 278px with a three-line caveat it covered a quarter of
+   the map; the key itself needs far less. */
+.map-presentation .map-legend { width: 208px; padding: 9px 10px 8px; bottom: 26px; }
+.map-presentation .map-legend-scale { height: 6px; margin-top: 7px; }
+.map-presentation .map-legend-values { margin-top: 3px; font-size: 9px; }
+.map-presentation .map-legend-symbols { gap: 4px 10px; margin-top: 8px; font-size: 9px; }
+.map-presentation .map-legend-symbols > span { gap: 4px; }
+.map-presentation .map-legend-caveat { margin-top: 7px; padding-top: 6px; font-size: 9px; line-height: 1.4; }

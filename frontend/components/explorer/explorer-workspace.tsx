@@ -207,11 +207,13 @@ export function ExplorerWorkspace() {
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate font-medium">{mine.name}</span>
-                        <span className="mt-0.5 block text-[10px] text-metadata">
+                        {/* truncate, not wrap: the district line is long enough to
+                            push the confidence block out of the row. */}
+                        <span className="mt-0.5 block truncate text-[10px] text-metadata">
                           {mine.district} · {mine.state} · {mine.mine_type}
                         </span>
                       </span>
-                      <span className="text-right">
+                      <span className="shrink-0 whitespace-nowrap text-right">
                         <span className="block text-[9px] text-metadata">Coordinate</span>
                         <span className="numeric font-semibold">
                           {mine.coordinate_confidence.replaceAll("_", "-")}

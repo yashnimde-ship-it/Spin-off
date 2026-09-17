@@ -61,10 +61,9 @@ export function MapLegend() {
           <span className="hatch-swatch" /> Mask exclusion
         </span>
       </div>
-      <p className="map-legend-caveat">
-        Model cells at ~5 × 3 km, scored by prospectivity_v6. Screening indices, not surveyed
-        footprints, reserves or measured ore.
-      </p>
+      {/* One line: the legend sits over the map, and three lines of caveat took
+          more of it than the key did. */}
+      <p className="map-legend-caveat">~5 × 3 km cells · screening index, not reserves</p>
     </div>
   );
 }
